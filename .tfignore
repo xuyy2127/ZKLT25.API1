@@ -1,0 +1,9 @@
+# 忽略 bin 和 obj 文件夹
+bin/
+obj/
+
+# 忽略 .vs 文件夹（Visual Studio 解决方案文件）
+.vs/
+
+# 忽略日志文件
+Logs/
