@@ -462,6 +462,18 @@ namespace ZKLT25.API.Services
         {
             try
             {
+                // 测试数据库连接
+                try
+                {
+                    var canConnect = await _db.Database.CanConnectAsync();
+                    Console.WriteLine($"数据库连接状态: {canConnect}");
+                }
+                catch (Exception connEx)
+                {
+                    Console.WriteLine($"数据库连接测试失败: {connEx.Message}");
+                    return ResultModel<bool>.Error($"数据库连接失败: {connEx.Message}");
+                }
+
                 // 获取当前登录用户名
                 var currentUser = GetCurrentUserName() ?? "测试用户";
 
@@ -475,11 +487,7 @@ namespace ZKLT25.API.Services
                 entity.KDate = DateTime.Now;
                 entity.KUser = currentUser; // 只使用真实的登录用户
 
-                // 临时解决方案：手动获取下一个可用的 ID
-                var maxId = await _db.Ask_Supplier.MaxAsync(s => (int?)s.ID) ?? 0;
-                entity.ID = maxId + 1;
-
-                Console.WriteLine($"准备保存供应商: ID={entity.ID}, SuppName={entity.SuppName}, SupplierClass={entity.SupplierClass}, KUser={entity.KUser}, KDate={entity.KDate}");
+                Console.WriteLine($"准备保存供应商: SuppName={entity.SuppName}, SupplierClass={entity.SupplierClass}, KUser={entity.KUser}, KDate={entity.KDate}");
 
                 try
                 {
@@ -492,10 +500,25 @@ namespace ZKLT25.API.Services
                 catch (Exception saveEx)
                 {
                     Console.WriteLine($"保存过程中出错: {saveEx.Message}");
+                    Console.WriteLine($"异常类型: {saveEx.GetType().Name}");
                     if (saveEx.InnerException != null)
                     {
                         Console.WriteLine($"内部异常: {saveEx.InnerException.Message}");
+                        Console.WriteLine($"内部异常类型: {saveEx.InnerException.GetType().Name}");
                     }
+                    
+                    // 检查是否是数据库连接问题
+                    if (saveEx.Message.Contains("connection") || saveEx.Message.Contains("timeout"))
+                    {
+                        Console.WriteLine("可能是数据库连接问题");
+                    }
+                    
+                    // 检查是否是约束问题
+                    if (saveEx.Message.Contains("constraint") || saveEx.Message.Contains("unique"))
+                    {
+                        Console.WriteLine("可能是数据库约束问题");
+                    }
+                    
                     throw;
                 }
                 
