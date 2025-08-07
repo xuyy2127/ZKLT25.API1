@@ -3,7 +3,7 @@ namespace ZKLT25.API.IServices.Dtos
     /// <summary>
     /// 供应商附件配置页面DTO
     /// </summary>
-    public class SupplierFJConfigPageDto
+    public class SPFJPageDto
     {
         /// <summary>
         /// 附件类型

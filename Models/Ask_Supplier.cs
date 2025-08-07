@@ -13,6 +13,7 @@ namespace ZKLT25.API.Models
         /// 主键ID
         /// </summary>
         [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int ID { get; set; }
 
         /// <summary>

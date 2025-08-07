@@ -3,7 +3,7 @@ namespace ZKLT25.API.IServices.Dtos
     /// <summary>
     /// 供应商阀体配置页面DTO
     /// </summary>
-    public class SupplierFTConfigPageDto
+    public class SPFTPageDto
     {
         /// <summary>
         /// 阀体ID
@@ -26,8 +26,8 @@ namespace ZKLT25.API.IServices.Dtos
         public bool IsSupplied { get; set; } = false;
 
         /// <summary>
-        /// 等级（1-3，可选）
+        /// 等级:3推荐，2一般，1备用，可以为null
         /// </summary>
         public int? Lv { get; set; } = null;
     }
-} 
+}

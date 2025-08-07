@@ -9,6 +9,8 @@ namespace ZKLT25.API.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
+    [Produces("application/json")]
+    [Consumes("application/json")]
     public class AskController : ControllerBase
     {
         private readonly IAskService _service;
@@ -84,6 +86,8 @@ namespace ZKLT25.API.Controllers
         /// 批量更新阀体系数
         /// </summary>
         [HttpPost("BatchUpdateFTRatio")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
         public async Task<ResultModel<bool>> BatchUpdateFTRatioAsync([FromBody] BatchUpdateRatioRequest request)
         {
             return await _service.BatchUpdateFTRatioAsync(request.Ids, request.Ratio);
@@ -111,6 +115,8 @@ namespace ZKLT25.API.Controllers
         /// 批量更新附件系数
         /// </summary>
         [HttpPost("BatchUpdateFJRatio")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
         public async Task<ResultModel<bool>> BatchUpdateFJRatioAsync([FromBody] BatchUpdateRatioRequest request)
         {
             return await _service.BatchUpdateFJRatioAsync(request.Ids, request.Ratio);
@@ -158,6 +164,8 @@ namespace ZKLT25.API.Controllers
         /// <param name="cto">创建参数</param>
         /// <returns></returns>
         [HttpPost("CreateSP")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
         public async Task<ResultModel<bool>> CreateSPAsync([FromBody] Ask_SupplierCto cto)
         {
             return await _service.CreateSPAsync(cto);
@@ -203,10 +211,10 @@ namespace ZKLT25.API.Controllers
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
         /// <returns></returns>
-        [HttpGet("supplier/{supplierId}/fj-config")]
-        public async Task<IActionResult> GetSupplierFJConfig(int supplierId)
+        [HttpGet("GETSPFJ")]
+        public async Task<IActionResult> GetSPFJ(int supplierId)
         {
-            var result = await _service.GetSupplierFJConfigPageAsync(supplierId);
+            var result = await _service.GetSPFJPageAsync(supplierId);
             return Ok(result);
         }
 
@@ -216,10 +224,12 @@ namespace ZKLT25.API.Controllers
         /// <param name="supplierId">供应商ID</param>
         /// <param name="suppliedFJTypes">选中供应的附件类型列表</param>
         /// <returns></returns>
-        [HttpPost("supplier/{supplierId}/fj-config")]
-        public async Task<IActionResult> SaveSupplierFJConfig(int supplierId, [FromBody] List<string> suppliedFJTypes)
+        [HttpPost("UpdateSPFJ")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
+        public async Task<IActionResult> SaveSPFJ(int supplierId, [FromBody] List<string> suppliedFJTypes)
         {
-            var result = await _service.BatchUpdateSupplierFJConfigAsync(supplierId, suppliedFJTypes);
+            var result = await _service.BatchUpdateSPFJAsync(supplierId, suppliedFJTypes);
             return Ok(result);
         }
 
@@ -228,10 +238,10 @@ namespace ZKLT25.API.Controllers
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
         /// <returns></returns>
-        [HttpGet("supplier/{supplierId}/ft-config")]
-        public async Task<IActionResult> GetSupplierFTConfig(int supplierId)
+        [HttpGet("GETSPFT")]
+        public async Task<IActionResult> GetSPFT(int supplierId)
         {
-            var result = await _service.GetSupplierFTConfigPageAsync(supplierId);
+            var result = await _service.GetSPFTPageAsync(supplierId);
             return Ok(result);
         }
 
@@ -241,10 +251,12 @@ namespace ZKLT25.API.Controllers
         /// <param name="supplierId">供应商ID</param>
         /// <param name="cto">配置请求</param>
         /// <returns></returns>
-        [HttpPost("supplier/{supplierId}/ft-config")]
-        public async Task<IActionResult> SaveSupplierFTConfig(int supplierId, [FromBody] BatchUpdateSupplierFTConfigCto cto)
+        [HttpPost("UpdateSPFT")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
+        public async Task<IActionResult> SaveSPFT(int supplierId, [FromBody] BatchUpdateSPFTCto cto)
         {
-            var result = await _service.BatchUpdateSupplierFTConfigAsync(supplierId, cto.SuppliedFTItems);
+            var result = await _service.BatchUpdateSPFTAsync(supplierId, cto.SuppliedFTItems);
             return Ok(result);
         }
 

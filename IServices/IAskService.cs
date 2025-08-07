@@ -121,7 +121,7 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
         /// <returns></returns>
-        Task<ResultModel<List<SupplierFJConfigPageDto>>> GetSupplierFJConfigPageAsync(int supplierId);
+        Task<ResultModel<List<SPFJPageDto>>> GetSPFJPageAsync(int supplierId);
 
         /// <summary>
         /// 批量更新供应商附件配置
@@ -129,14 +129,14 @@ namespace ZKLT25.API.IServices
         /// <param name="supplierId">供应商ID</param>
         /// <param name="suppliedFJTypes">选中供应的附件类型列表</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> BatchUpdateSupplierFJConfigAsync(int supplierId, List<string> suppliedFJTypes);
+        Task<ResultModel<bool>> BatchUpdateSPFJAsync(int supplierId, List<string> suppliedFJTypes);
 
         /// <summary>
         /// 获取供应商阀体配置页面数据
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
         /// <returns></returns>
-        Task<ResultModel<List<SupplierFTConfigPageDto>>> GetSupplierFTConfigPageAsync(int supplierId);
+        Task<ResultModel<List<SPFTPageDto>>> GetSPFTPageAsync(int supplierId);
 
         /// <summary>
         /// 批量更新供应商阀体配置
@@ -144,7 +144,7 @@ namespace ZKLT25.API.IServices
         /// <param name="supplierId">供应商ID</param>
         /// <param name="suppliedFTItems">选中的阀体配置列表</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> BatchUpdateSupplierFTConfigAsync(int supplierId, List<SupplierFTConfigItem> suppliedFTItems);
+        Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems);
 
         #endregion
     }

@@ -21,7 +21,7 @@ namespace ZKLT25.API.IServices.Dtos
         public int? FTID { get; set; }
 
         /// <summary>
-        /// 等级
+        /// 等级:3推荐，2一般，1备用，可以为null
         /// </summary>
         public int? lv { get; set; }
 

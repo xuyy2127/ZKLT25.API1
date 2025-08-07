@@ -7,6 +7,7 @@ using ZKLT25.API.IServices;
 using ZKLT25.API.IServices.Dtos;
 using ZKLT25.API.Models;
 using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace ZKLT25.API.Services
 {
@@ -32,12 +33,10 @@ namespace ZKLT25.API.Services
             var context = _httpContextAccessor.HttpContext;
             if (context?.User?.Identity?.IsAuthenticated == true)
             {
-                // 从JWT token中获取用户名
-                var userName = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value 
-                            ?? context.User.FindFirst("sub")?.Value;
+                var userName = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
                 return userName;
             }
-            return null; // 未登录返回null
+            return null;
         }
 
         /// <summary>
@@ -48,6 +47,43 @@ namespace ZKLT25.API.Services
         {
             var context = _httpContextAccessor.HttpContext;
             return context?.User?.Identity?.IsAuthenticated == true;
+        }
+
+        /// <summary>
+        /// 记录修改日志
+        /// </summary>
+        /// <param name="mainId">主表ID</param>
+        /// <param name="dataType">数据类型（"阀体"或"附件"）</param>
+        /// <param name="partType">零件类型</param>
+        /// <param name="partVersion">零件型号</param>
+        /// <param name="partName">零件名称</param>
+        /// <param name="ratio">比例系数</param>
+        private async Task AddLogAsync(int mainId, string dataType, string? partType, string? partVersion, string? partName, double ratio)
+        {
+            try
+            {
+                // 尝试获取当前登录用户，如果获取不到则使用默认值
+                var currentUser = GetCurrentUserName() ?? "未知用户";
+
+                var log = new Ask_FTFJListLog
+                {
+                    MainID = mainId,
+                    DataType = dataType,
+                    PartType = partType,
+                    PartVersion = partVersion,
+                    PartName = partName,
+                    Ratio = ratio,
+                    CreateUser = currentUser,
+                    CreateDate = DateTime.Now
+                };
+
+                _db.Ask_FTFJListLog.Add(log);
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"记录日志失败: {ex.Message}");
+            }
         }
 
         #region 阀体型号维护
@@ -138,9 +174,24 @@ namespace ZKLT25.API.Services
                     return ResultModel<bool>.Error("阀体型号已存在");
                 }
 
+                // 记录修改前的数据用于日志
+                var oldRatio = entity.ratio ?? 0;
+                var oldFTVersion = entity.FTVersion;
+                var oldFTName = entity.FTName;
+
                 _mapper.Map(uto, entity);
 
                 await _db.SaveChangesAsync();
+
+                // 记录修改日志
+                await AddLogAsync(
+                    mainId: id,
+                    dataType: "阀体",
+                    partType: "阀体",
+                    partVersion: uto.FTVersion,
+                    partName: uto.FTName,
+                    ratio: uto.ratio ?? 0
+                );
 
                 var model = ResultModel<bool>.Ok(true);
                 model.Warning = GetRatioWarning(uto.isWG, uto.ratio);
@@ -222,7 +273,7 @@ namespace ZKLT25.API.Services
                 }
 
                 string? warning = null;
-                // 批量更新系数
+                // 批量更新系数并记录日志
                 foreach (var entity in entities)
                 {
                     entity.ratio = ratio;
@@ -231,6 +282,16 @@ namespace ZKLT25.API.Services
                     {
                         warning = GetRatioWarning(entity.isWG, entity.ratio);
                     }
+
+                    // 记录修改日志
+                    await AddLogAsync(
+                        mainId: entity.ID,
+                        dataType: "阀体",
+                        partType: "阀体",
+                        partVersion: entity.FTVersion,
+                        partName: entity.FTName,
+                        ratio: ratio
+                    );
                 }
 
                 await _db.SaveChangesAsync();
@@ -311,10 +372,20 @@ namespace ZKLT25.API.Services
                     return ResultModel<bool>.Error("未找到要更新的记录");
                 }
 
-                // 批量更新系数
+                // 批量更新系数并记录日志
                 foreach (var entity in entities)
                 {
                     entity.ratio = ratio;
+
+                    // 记录修改日志
+                    await AddLogAsync(
+                        mainId: entity.ID,
+                        dataType: "附件",
+                        partType: "附件",
+                        partVersion: entity.FJType,
+                        partName: entity.FJType,
+                        ratio: ratio
+                    );
                 }
 
                 await _db.SaveChangesAsync();
@@ -391,18 +462,8 @@ namespace ZKLT25.API.Services
         {
             try
             {
-                // 严格检查用户是否已登录
-                if (!IsUserAuthenticated())
-                {
-                    return ResultModel<bool>.Error("未登录，禁止创建操作");
-                }
-
                 // 获取当前登录用户名
-                var currentUser = GetCurrentUserName();
-                if (string.IsNullOrEmpty(currentUser))
-                {
-                    return ResultModel<bool>.Error("无法获取用户信息，操作被拒绝");
-                }
+                var currentUser = GetCurrentUserName() ?? "测试用户";
 
                 var existsResult = await ExistsSPAsync(cto.SuppName);
                 if (existsResult.Data)
@@ -414,13 +475,40 @@ namespace ZKLT25.API.Services
                 entity.KDate = DateTime.Now;
                 entity.KUser = currentUser; // 只使用真实的登录用户
 
-                _db.Ask_Supplier.Add(entity);
-                await _db.SaveChangesAsync();
+                // 临时解决方案：手动获取下一个可用的 ID
+                var maxId = await _db.Ask_Supplier.MaxAsync(s => (int?)s.ID) ?? 0;
+                entity.ID = maxId + 1;
+
+                Console.WriteLine($"准备保存供应商: ID={entity.ID}, SuppName={entity.SuppName}, SupplierClass={entity.SupplierClass}, KUser={entity.KUser}, KDate={entity.KDate}");
+
+                try
+                {
+                    _db.Ask_Supplier.Add(entity);
+                    Console.WriteLine("实体已添加到 DbContext");
+                    
+                    await _db.SaveChangesAsync();
+                    Console.WriteLine("数据库保存成功");
+                }
+                catch (Exception saveEx)
+                {
+                    Console.WriteLine($"保存过程中出错: {saveEx.Message}");
+                    if (saveEx.InnerException != null)
+                    {
+                        Console.WriteLine($"内部异常: {saveEx.InnerException.Message}");
+                    }
+                    throw;
+                }
                 
                 return ResultModel<bool>.Ok(true);
             }
             catch (Exception ex)
             {
+                // 记录详细的错误信息
+                Console.WriteLine($"创建供应商失败 - 详细错误: {ex}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"内部异常: {ex.InnerException}");
+                }
                 return ResultModel<bool>.Error($"创建失败：{ex.Message}");
             }
         }
@@ -520,7 +608,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 获取供应商附件配置页面数据
         /// </summary>
-        public async Task<ResultModel<List<SupplierFJConfigPageDto>>> GetSupplierFJConfigPageAsync(int supplierId)
+        public async Task<ResultModel<List<SPFJPageDto>>> GetSPFJPageAsync(int supplierId)
         {
             try
             {
@@ -529,35 +617,29 @@ namespace ZKLT25.API.Services
                                    join sr in _db.Ask_SuppRangeFJ.Where(x => x.SuppID == supplierId)
                                    on fj.FJType equals sr.FJType into supplierRelations
                                    from sr in supplierRelations.DefaultIfEmpty()
-                                   select new SupplierFJConfigPageDto
+                                   select new SPFJPageDto
                                    {
                                        FJType = fj.FJType!,
                                        IsSupplied = sr != null  // 有关系记录=true，否则=false
                                    }).ToListAsync();
 
-                return ResultModel<List<SupplierFJConfigPageDto>>.Ok(result);
+                return ResultModel<List<SPFJPageDto>>.Ok(result);
             }
             catch (Exception ex)
             {
-                return ResultModel<List<SupplierFJConfigPageDto>>.Error($"查询失败: {ex.Message}");
+                return ResultModel<List<SPFJPageDto>>.Error($"查询失败: {ex.Message}");
             }
         }
 
         /// <summary>
         /// 批量更新供应商附件配置
         /// </summary>
-        public async Task<ResultModel<bool>> BatchUpdateSupplierFJConfigAsync(int supplierId, List<string> suppliedFJTypes)
+        public async Task<ResultModel<bool>> BatchUpdateSPFJAsync(int supplierId, List<string> suppliedFJTypes)
         {
             try
             {
-                // 检查用户是否已登录
-                var currentUser = GetCurrentUserName();
-                if (currentUser == null)
-                {
-                    return ResultModel<bool>.Error("用户未登录");
-                }
 
-                // 1. 删除该供应商的所有现有配置
+                //  删除该供应商的所有现有配置
                 var existingConfigs = await _db.Ask_SuppRangeFJ
                     .Where(x => x.SuppID == supplierId)
                     .ToListAsync();
@@ -567,7 +649,7 @@ namespace ZKLT25.API.Services
                     _db.Ask_SuppRangeFJ.RemoveRange(existingConfigs);
                 }
 
-                // 2. 新增选中的配置
+                // 新增选中的配置
                 if (suppliedFJTypes.Any())
                 {
                     var newConfigs = suppliedFJTypes.Select(fjType => new Ask_SuppRangeFJ
@@ -594,7 +676,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 获取供应商阀体配置页面数据
         /// </summary>
-        public async Task<ResultModel<List<SupplierFTConfigPageDto>>> GetSupplierFTConfigPageAsync(int supplierId)
+        public async Task<ResultModel<List<SPFTPageDto>>> GetSPFTPageAsync(int supplierId)
         {
             try
             {
@@ -603,27 +685,27 @@ namespace ZKLT25.API.Services
                                    join sr in _db.Ask_SuppRangeFT.Where(x => x.SuppID == supplierId)
                                    on ft.ID equals sr.FTID into supplierRelations
                                    from sr in supplierRelations.DefaultIfEmpty()
-                                   select new SupplierFTConfigPageDto
+                                   select new SPFTPageDto
                                    {
                                        FTID = ft.ID,
-                                       FTName = ft.FTName!,
-                                       FTVersion = ft.FTVersion!,
+                                       FTName = ft.FTName ?? "",
+                                       FTVersion = ft.FTVersion ?? "",
                                        IsSupplied = sr != null,  // 有关系记录=true，否则=false
                                        Lv = sr != null ? sr.lv : null
                                    }).ToListAsync();
 
-                return ResultModel<List<SupplierFTConfigPageDto>>.Ok(result);
+                return ResultModel<List<SPFTPageDto>>.Ok(result);
             }
             catch (Exception ex)
             {
-                return ResultModel<List<SupplierFTConfigPageDto>>.Error($"查询失败: {ex.Message}");
+                return ResultModel<List<SPFTPageDto>>.Error($"查询失败: {ex.Message}");
             }
         }
 
         /// <summary>
         /// 批量更新供应商阀体配置
         /// </summary>
-        public async Task<ResultModel<bool>> BatchUpdateSupplierFTConfigAsync(int supplierId, List<SupplierFTConfigItem> suppliedFTItems)
+        public async Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems)
         {
             try
             {
@@ -634,14 +716,8 @@ namespace ZKLT25.API.Services
                     return ResultModel<bool>.Error("用户未登录");
                 }
 
-                // 验证等级范围
-                var invalidLvItems = suppliedFTItems.Where(x => x.Lv.HasValue && (x.Lv < 1 || x.Lv > 3)).ToList();
-                if (invalidLvItems.Any())
-                {
-                    return ResultModel<bool>.Error("等级必须在1-3范围内");
-                }
 
-                // 1. 删除该供应商的所有现有配置
+                // 删除该供应商的所有现有配置
                 var existingConfigs = await _db.Ask_SuppRangeFT
                     .Where(x => x.SuppID == supplierId)
                     .ToListAsync();
@@ -651,7 +727,7 @@ namespace ZKLT25.API.Services
                     _db.Ask_SuppRangeFT.RemoveRange(existingConfigs);
                 }
 
-                // 2. 新增选中的配置
+                // 新增选中的配置
                 if (suppliedFTItems.Any())
                 {
                     var newConfigs = suppliedFTItems.Select(item => new Ask_SuppRangeFT
