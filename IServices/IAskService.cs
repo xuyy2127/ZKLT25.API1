@@ -25,8 +25,9 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="id">主键ID</param>
         /// <param name="uto">更新请求</param>
+        /// <param name="currentUser">当前用户</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> UpdateFTAsync(int id, Ask_FTListUto uto);
+        Task<ResultModel<bool>> UpdateFTAsync(int id, Ask_FTListUto uto, string? currentUser);
 
         /// <summary>
         /// 删除阀体型号
@@ -48,8 +49,9 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="ids">要更新的记录ID列表</param>
         /// <param name="ratio">新的系数值</param>
+        /// <param name="currentUser">当前用户</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> BatchUpdateFTRatioAsync(List<int> ids, double ratio);
+        Task<ResultModel<bool>> BatchUpdateFTRatioAsync(List<int> ids, double ratio, string? currentUser);
         #endregion
 
         #region 附件服务接口
@@ -65,8 +67,9 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="ids">要更新的记录ID列表</param>
         /// <param name="ratio">新的系数值</param>
+        /// <param name="currentUser">当前用户</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> BatchUpdateFJRatioAsync(List<int> ids, double ratio);
+        Task<ResultModel<bool>> BatchUpdateFJRatioAsync(List<int> ids, double ratio, string? currentUser);
         #endregion
 
         #region 阀体 / 附件日志服务接口
@@ -90,16 +93,18 @@ namespace ZKLT25.API.IServices
         /// 新建供应商
         /// </summary>
         /// <param name="cto">创建请求</param>
+        /// <param name="currentUser">当前用户</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> CreateSPAsync(Ask_SupplierCto cto);
+        Task<ResultModel<bool>> CreateSPAsync(Ask_SupplierCto cto, string? currentUser);
 
         /// <summary>
         /// 更新供应商信息
         /// </summary>
         /// <param name="id">主键ID</param>
         /// <param name="uto">更新请求</param>
+        /// <param name="currentUser">当前用户</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> UpdateSPAsync(int id, Ask_SupplierUto uto);
+        Task<ResultModel<bool>> UpdateSPAsync(int id, Ask_SupplierUto uto, string? currentUser);
 
         /// <summary>
         /// 删除供应商
@@ -143,9 +148,32 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
         /// <param name="suppliedFTItems">选中的阀体配置列表</param>
+        /// <param name="currentUser">当前用户</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems);
+        Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems, string? currentUser);
 
         #endregion
+
+        #region 询价
+        /// <summary>
+        /// 分页查询询价单据
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns></returns>
+        Task<ResultModel<PaginationList<Ask_BillDto>>> GetBillPagedListAsync(Ask_BillQto qto);
+
+        /// <summary>
+        ///查看询价单据详情
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns></returns>
+        Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(string billId);
+
+        /// <summary>
+        /// 获取询价状态日志
+        /// </summary>
+        Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync(Ask_BillLogQto qto);
+        #endregion
+
     }
 }

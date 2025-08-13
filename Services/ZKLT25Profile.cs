@@ -33,6 +33,12 @@ namespace ZKLT25.API.Services
                 .ForMember(dest => dest.FTName, opt => opt.MapFrom(src => src.FTList != null ? src.FTList.FTName : null))
                 .ForMember(dest => dest.FTVersion, opt => opt.MapFrom(src => src.FTList != null ? src.FTList.FTVersion : null));
 
+            // Ask_Bill 映射配置
+            CreateMap<Ask_Bill, Ask_BillDto>()
+                .ForMember(dest => dest.BillStateText, opt => opt.MapFrom(src => GetBillStateText(src.BillState)));
+
+
+
 
         }
 
@@ -61,5 +67,22 @@ namespace ZKLT25.API.Services
                 _ => "未设置"
             };
         }
+
+        /// <summary>
+        /// 获取询价状态显示文本
+        /// </summary>
+        public static string GetBillStateText(int? state)
+        {
+            return state switch
+            {
+                -1 => "已关闭",
+                0 => "发起",
+                1 => "询价供货商",
+                2 => "已完成",
+                _ => "未知状态"
+            };
+        }
+
+
     }
 }

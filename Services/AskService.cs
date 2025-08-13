@@ -15,39 +15,14 @@ namespace ZKLT25.API.Services
     {
         private readonly AppDbContext _db;
         private readonly IMapper _mapper;
-        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public AskService(AppDbContext db, IMapper mapper, IHttpContextAccessor httpContextAccessor)
+        public AskService(AppDbContext db, IMapper mapper)
         {
             _db = db;
             _mapper = mapper;
-            _httpContextAccessor = httpContextAccessor;
         }
 
-        /// <summary>
-        /// 获取当前登录用户名
-        /// </summary>
-        /// <returns>返回用户名，如果未登录则返回null</returns>
-        private string? GetCurrentUserName()
-        {
-            var context = _httpContextAccessor.HttpContext;
-            if (context?.User?.Identity?.IsAuthenticated == true)
-            {
-                var userName = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-                return userName;
-            }
-            return null;
-        }
 
-        /// <summary>
-        /// 检查用户是否已登录
-        /// </summary>
-        /// <returns>true表示已登录，false表示未登录</returns>
-        private bool IsUserAuthenticated()
-        {
-            var context = _httpContextAccessor.HttpContext;
-            return context?.User?.Identity?.IsAuthenticated == true;
-        }
 
         /// <summary>
         /// 记录修改日志
@@ -58,12 +33,11 @@ namespace ZKLT25.API.Services
         /// <param name="partVersion">零件型号</param>
         /// <param name="partName">零件名称</param>
         /// <param name="ratio">比例系数</param>
-        private async Task AddLogAsync(int mainId, string dataType, string? partType, string? partVersion, string? partName, double ratio)
+        /// <param name="currentUser">当前用户</param>
+        private async Task AddLogAsync(int mainId, string dataType, string? partType, string? partVersion, string? partName, double ratio, string? currentUser)
         {
             try
             {
-                // 尝试获取当前登录用户，如果获取不到则使用默认值
-                var currentUser = GetCurrentUserName() ?? "未知用户";
 
                 var log = new Ask_FTFJListLog
                 {
@@ -73,7 +47,7 @@ namespace ZKLT25.API.Services
                     PartVersion = partVersion,
                     PartName = partName,
                     Ratio = ratio,
-                    CreateUser = currentUser,
+                    CreateUser = currentUser ?? "系统用户",
                     CreateDate = DateTime.Now
                 };
 
@@ -158,7 +132,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 更新阀体型号
         /// </summary>
-        public async Task<ResultModel<bool>> UpdateFTAsync(int id, Ask_FTListUto uto)
+        public async Task<ResultModel<bool>> UpdateFTAsync(int id, Ask_FTListUto uto, string? currentUser)
         {
             try
             {
@@ -174,11 +148,6 @@ namespace ZKLT25.API.Services
                     return ResultModel<bool>.Error("阀体型号已存在");
                 }
 
-                // 记录修改前的数据用于日志
-                var oldRatio = entity.ratio ?? 0;
-                var oldFTVersion = entity.FTVersion;
-                var oldFTName = entity.FTName;
-
                 _mapper.Map(uto, entity);
 
                 await _db.SaveChangesAsync();
@@ -190,7 +159,8 @@ namespace ZKLT25.API.Services
                     partType: "阀体",
                     partVersion: uto.FTVersion,
                     partName: uto.FTName,
-                    ratio: uto.ratio ?? 0
+                    ratio: uto.ratio ?? 1.0, // 如果为空则使用默认值1.0
+                    currentUser: currentUser
                 );
 
                 var model = ResultModel<bool>.Ok(true);
@@ -257,7 +227,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 批量更新系数
         /// </summary>
-        public async Task<ResultModel<bool>> BatchUpdateFTRatioAsync(List<int> ids, double ratio)
+        public async Task<ResultModel<bool>> BatchUpdateFTRatioAsync(List<int> ids, double ratio, string? currentUser)
         {
             try
             {
@@ -290,7 +260,8 @@ namespace ZKLT25.API.Services
                         partType: "阀体",
                         partVersion: entity.FTVersion,
                         partName: entity.FTName,
-                        ratio: ratio
+                        ratio: ratio,
+                        currentUser: currentUser
                     );
                 }
 
@@ -357,7 +328,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 批量更新系数
         /// </summary>
-        public async Task<ResultModel<bool>> BatchUpdateFJRatioAsync(List<int> ids, double ratio)
+        public async Task<ResultModel<bool>> BatchUpdateFJRatioAsync(List<int> ids, double ratio, string? currentUser)
         {
             try
             {
@@ -384,7 +355,8 @@ namespace ZKLT25.API.Services
                         partType: "附件",
                         partVersion: entity.FJType,
                         partName: entity.FJType,
-                        ratio: ratio
+                        ratio: ratio,
+                        currentUser: currentUser
                     );
                 }
 
@@ -458,25 +430,10 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 创建供应商
         /// </summary>
-        public async Task<ResultModel<bool>> CreateSPAsync(Ask_SupplierCto cto)
+        public async Task<ResultModel<bool>> CreateSPAsync(Ask_SupplierCto cto, string? currentUser)
         {
             try
             {
-                // 测试数据库连接
-                try
-                {
-                    var canConnect = await _db.Database.CanConnectAsync();
-                    Console.WriteLine($"数据库连接状态: {canConnect}");
-                }
-                catch (Exception connEx)
-                {
-                    Console.WriteLine($"数据库连接测试失败: {connEx.Message}");
-                    return ResultModel<bool>.Error($"数据库连接失败: {connEx.Message}");
-                }
-
-                // 获取当前登录用户名
-                var currentUser = GetCurrentUserName() ?? "测试用户";
-
                 var existsResult = await ExistsSPAsync(cto.SuppName);
                 if (existsResult.Data)
                 {
@@ -485,53 +442,15 @@ namespace ZKLT25.API.Services
 
                 var entity = _mapper.Map<Ask_Supplier>(cto);
                 entity.KDate = DateTime.Now;
-                entity.KUser = currentUser; // 只使用真实的登录用户
+                entity.KUser = currentUser ?? "系统用户";
 
-                Console.WriteLine($"准备保存供应商: SuppName={entity.SuppName}, SupplierClass={entity.SupplierClass}, KUser={entity.KUser}, KDate={entity.KDate}");
-
-                try
-                {
-                    _db.Ask_Supplier.Add(entity);
-                    Console.WriteLine("实体已添加到 DbContext");
-                    
-                    await _db.SaveChangesAsync();
-                    Console.WriteLine("数据库保存成功");
-                }
-                catch (Exception saveEx)
-                {
-                    Console.WriteLine($"保存过程中出错: {saveEx.Message}");
-                    Console.WriteLine($"异常类型: {saveEx.GetType().Name}");
-                    if (saveEx.InnerException != null)
-                    {
-                        Console.WriteLine($"内部异常: {saveEx.InnerException.Message}");
-                        Console.WriteLine($"内部异常类型: {saveEx.InnerException.GetType().Name}");
-                    }
-                    
-                    // 检查是否是数据库连接问题
-                    if (saveEx.Message.Contains("connection") || saveEx.Message.Contains("timeout"))
-                    {
-                        Console.WriteLine("可能是数据库连接问题");
-                    }
-                    
-                    // 检查是否是约束问题
-                    if (saveEx.Message.Contains("constraint") || saveEx.Message.Contains("unique"))
-                    {
-                        Console.WriteLine("可能是数据库约束问题");
-                    }
-                    
-                    throw;
-                }
+                _db.Ask_Supplier.Add(entity);
+                await _db.SaveChangesAsync();
                 
                 return ResultModel<bool>.Ok(true);
             }
             catch (Exception ex)
             {
-                // 记录详细的错误信息
-                Console.WriteLine($"创建供应商失败 - 详细错误: {ex}");
-                if (ex.InnerException != null)
-                {
-                    Console.WriteLine($"内部异常: {ex.InnerException}");
-                }
                 return ResultModel<bool>.Error($"创建失败：{ex.Message}");
             }
         }
@@ -539,15 +458,10 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 更新供应商信息
         /// </summary>
-        public async Task<ResultModel<bool>> UpdateSPAsync(int id, Ask_SupplierUto uto)
+        public async Task<ResultModel<bool>> UpdateSPAsync(int id, Ask_SupplierUto uto, string? currentUser)
         {
             try
             {
-                // 检查用户是否已登录
-                if (!IsUserAuthenticated())
-                {
-                    return ResultModel<bool>.Error("未登录，禁止更新操作");
-                }
 
                 var entity = await _db.Ask_Supplier.FindAsync(id);
                 if (entity == null)
@@ -728,16 +642,10 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 批量更新供应商阀体配置
         /// </summary>
-        public async Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems)
+        public async Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems, string? currentUser)
         {
             try
             {
-                // 检查用户是否已登录
-                var currentUser = GetCurrentUserName();
-                if (currentUser == null)
-                {
-                    return ResultModel<bool>.Error("用户未登录");
-                }
 
 
                 // 删除该供应商的所有现有配置
@@ -771,6 +679,147 @@ namespace ZKLT25.API.Services
                 return ResultModel<bool>.Error($"更新失败: {ex.Message}");
             }
         }
+
+        #endregion
+
+        #region 询价单据查询
+        /// <summary>
+        /// 获取询价分页数据
+        /// </summary>
+        public async Task<ResultModel<PaginationList<Ask_BillDto>>> GetBillPagedListAsync(Ask_BillQto qto)
+        {
+            try
+            {
+                var query = from bill in _db.Ask_Bill
+                           join priceBill in _db.Price_Bill on bill.BillID equals priceBill.BillID into priceBills
+                           from priceBill in priceBills.DefaultIfEmpty()
+                           select new { bill, priceBill };
+
+                // 关键字搜索：单据编号/项目名称/客户名称/发起人
+                if (!string.IsNullOrWhiteSpace(qto.Keyword))
+                {
+                    query = query.Where(x => 
+                    x.bill.BillID.ToString().Contains(qto.Keyword) || 
+                    x.bill.Proj.Contains(qto.Keyword) || 
+                    x.bill.ProjUser.Contains(qto.Keyword) || 
+                    x.bill.KUser.Contains(qto.Keyword) ||
+                    (x.priceBill.Customer != null && x.priceBill.Customer.Contains(qto.Keyword)));
+                }
+
+                if (qto.StartDate.HasValue)
+                {
+                    query = query.Where(x => x.bill.KDate >= qto.StartDate.Value);
+                }
+
+                if (qto.EndDate.HasValue)
+                {
+                    var endDate = qto.EndDate.Value.AddDays(1);
+                    query = query.Where(x => x.bill.KDate < endDate);
+                }
+
+                query = query.OrderBy(x => x.bill.BillID);
+
+                var projectedQuery = query.Select(x => new Ask_BillDto
+                {
+                    BillID = x.bill.BillID,
+                    Proj = x.bill.Proj,
+                    ProjUser = x.bill.ProjUser,
+                    KUser = x.bill.KUser,
+                    BillState = x.bill.BillState,
+                    KDate = x.bill.KDate,
+                    Customer = x.priceBill.Customer
+                });
+
+                var result = await PaginationList<Ask_BillDto>.CreateAsync(qto.PageNumber, qto.PageSize, projectedQuery);
+                return ResultModel<PaginationList<Ask_BillDto>>.Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<PaginationList<Ask_BillDto>>.Error($"查询失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 询价订单详情
+        /// <summary>
+        public async Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(string billId)
+        {
+            try
+            {
+                // 使用 LEFT JOIN 查询：所有明细 LEFT JOIN 对应的价格信息
+                var query = from detail in _db.Ask_BillDetail.Where(d => d.BillID == int.Parse(billId))
+
+                            join priceInfo in _db.Ask_BillPrice
+                            on detail.ID equals priceInfo.BillDetailID into gj 
+
+                            from price in gj.DefaultIfEmpty() 
+
+                            orderby detail.ID
+
+                            select new Ask_BillDetailDto
+                            {
+                                Type = detail.Type,
+                                Version = detail.Version,
+                                Name = detail.Name,
+                                DN = detail.DN,
+                                PN = detail.PN,
+                                LJ = detail.LJ,
+                                FG = detail.FG,
+                                FT = detail.FT,
+                                FNJ = detail.FNJ,
+                                ordMed = detail.ordMed,
+                                OrdKV = detail.OrdKV,
+                                ordFW = detail.ordFW,
+                                ordLeak = detail.ordLeak,
+                                ordQY = detail.ordQY,
+                                TL = detail.TL,
+                                State = detail.State,
+                                Memo = detail.Memo,
+                                CGPriceMemo = detail.CGPriceMemo,
+
+                                Price = (price != null) ? price.Price : null,
+                                KDate = (price != null) ? price.KDate : null,
+                                Remarks = (price != null) ? price.Remarks : null
+                            };
+
+                var result = await query.ToListAsync();
+
+                return ResultModel<List<Ask_BillDetailDto>>.Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<List<Ask_BillDetailDto>>.Error($"查询明细失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取询价的状态日志
+        /// </summary>
+        public async Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync(Ask_BillLogQto qto)
+        {
+            try
+            {
+                var logs = await (from log in _db.Ask_BillLog.Where(x => x.BillDetailID == qto.BillDetailID)
+                                  join price in _db.Ask_BillPrice on log.BillDetailID equals price.BillDetailID into prices
+                                  from price in prices.DefaultIfEmpty()
+                                  orderby log.KDate
+                                  select new Ask_BillLogDto
+                                  {
+                                      KUser = log.KUser,
+                                      KDate = log.KDate,
+                                      State = ZKLT25Profile.GetBillStateText(log.State),
+                                      Price = price != null ? price.Price : null,
+                                      Remarks = price != null ? price.Remarks : null
+                                  }).ToListAsync();
+
+                return ResultModel<List<Ask_BillLogDto>>.Ok(logs);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<List<Ask_BillLogDto>>.Error($"查询失败: {ex.Message}");
+            }
+        }
+
 
         #endregion
     }

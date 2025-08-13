@@ -13,12 +13,12 @@ namespace ZKLT25.API.IServices.Dtos
         public string? Keyword { get; set; }
         
         /// <summary>
-        /// 是否外购筛选 (1=外购, 0=自制, null=全部)
+        /// 是否外购筛选 (1=外购, 0=自制)
         /// </summary>
         public int? isWG { get; set; }
         
         /// <summary>
-        /// 是否询价筛选 (1=是, 0=否, null=全部)
+        /// 是否询价筛选 (1=是, 0=否)
         /// </summary>
         public int? isAsk { get; set; }
     }

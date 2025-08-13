@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
 using ZKLT25.API.Helper;
 using ZKLT25.API.IServices;
 using ZKLT25.API.IServices.Dtos;
@@ -56,7 +57,8 @@ namespace ZKLT25.API.Controllers
         [HttpPut("{id}/UpdateFT")]
         public async Task<ResultModel<bool>> UpdateFTAsync([FromRoute] int id, [FromBody] Ask_FTListUto uto)
         {
-            return await _service.UpdateFTAsync(id, uto);
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.UpdateFTAsync(id, uto, currentUser);
         }
 
         /// <summary>
@@ -90,7 +92,8 @@ namespace ZKLT25.API.Controllers
         [Produces("application/json")]
         public async Task<ResultModel<bool>> BatchUpdateFTRatioAsync([FromBody] BatchUpdateRatioRequest request)
         {
-            return await _service.BatchUpdateFTRatioAsync(request.Ids, request.Ratio);
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.BatchUpdateFTRatioAsync(request.Ids, request.Ratio, currentUser);
         }
 
         #endregion
@@ -119,7 +122,8 @@ namespace ZKLT25.API.Controllers
         [Produces("application/json")]
         public async Task<ResultModel<bool>> BatchUpdateFJRatioAsync([FromBody] BatchUpdateRatioRequest request)
         {
-            return await _service.BatchUpdateFJRatioAsync(request.Ids, request.Ratio);
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.BatchUpdateFJRatioAsync(request.Ids, request.Ratio, currentUser);
         }
 
         #endregion
@@ -168,7 +172,8 @@ namespace ZKLT25.API.Controllers
         [Produces("application/json")]
         public async Task<ResultModel<bool>> CreateSPAsync([FromBody] Ask_SupplierCto cto)
         {
-            return await _service.CreateSPAsync(cto);
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.CreateSPAsync(cto, currentUser);
         }
 
         /// <summary>
@@ -180,7 +185,8 @@ namespace ZKLT25.API.Controllers
         [HttpPut("{id}/UpdateSP")]
         public async Task<ResultModel<bool>> UpdateSPAsync([FromRoute] int id, [FromBody] Ask_SupplierUto uto)
         {
-            return await _service.UpdateSPAsync(id, uto);
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.UpdateSPAsync(id, uto, currentUser);
         }
 
         /// <summary>
@@ -256,8 +262,50 @@ namespace ZKLT25.API.Controllers
         [Produces("application/json")]
         public async Task<IActionResult> SaveSPFT(int supplierId, [FromBody] BatchUpdateSPFTCto cto)
         {
-            var result = await _service.BatchUpdateSPFTAsync(supplierId, cto.SuppliedFTItems);
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            var result = await _service.BatchUpdateSPFTAsync(supplierId, cto.SuppliedFTItems, currentUser);
             return Ok(result);
+        }
+
+
+        #endregion
+
+        #region 询价
+
+        /// <summary>
+        /// 分页查询询价列表
+        /// </summary>
+        /// <param name="qto">查询参数</param>
+        /// <returns></returns>
+        [HttpGet("GetBillPagedList")]
+        public async Task<ResultModel<PaginationList<Ask_BillDto>>> GetBillPagedListAsync([FromQuery] Ask_BillQto qto)
+        {
+            var res = await _service.GetBillPagedListAsync(qto);
+            if (res.Data != null)
+                Response.Headers.Append("TotalCount", res.Data.TotalCount.ToString());
+            return res;
+        }
+
+        /// <summary>
+        /// 获取询价详情
+        /// </summary>
+        /// <param name="billId">账单ID</param>
+        /// <returns></returns>
+        [HttpGet("GetBillDetails/{billId}")]
+        public async Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(string billId)
+        {
+            return await _service.GetBillDetailsAsync(billId);
+        }
+
+        /// <summary>
+        /// 获取询价状态日志
+        /// </summary>
+        /// <param name="qto">查询参数</param>
+        /// <returns></returns>
+        [HttpPost("GetBillLogs")]
+        public async Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync([FromBody] Ask_BillLogQto qto)
+        {
+            return await _service.GetBillLogsAsync(qto);
         }
 
         #endregion
