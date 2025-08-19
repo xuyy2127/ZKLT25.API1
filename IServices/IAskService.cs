@@ -221,6 +221,14 @@ namespace ZKLT25.API.IServices
         /// <returns>返回影响的记录数</returns>
         Task<ResultModel<int>> SetPriceRemarkAsync(BillPriceCto cto, string? currentUser);
 
+        /// <summary>
+        /// 关闭项目（将状态从发起0改为已关闭-1）
+        /// </summary>
+        /// <param name="billDetailIds">要关闭的明细ID列表</param>
+        /// <param name="currentUser">当前用户</param>
+        /// <returns>操作结果</returns>
+        Task<ResultModel<int>> CloseProjectAsync(List<int> billDetailIds, string? currentUser);
+
         #endregion
 
     }

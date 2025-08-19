@@ -403,6 +403,19 @@ namespace ZKLT25.API.Controllers
             return await _service.SetPriceRemarkAsync(cto, currentUser);
         }
 
+
+        /// <summary>
+        /// 关闭项目
+        /// </summary>
+        [HttpPost("CloseProject")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
+        public async Task<ResultModel<int>> CloseProjectAsync([FromBody] List<int> billDetailIds)
+        {
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.CloseProjectAsync(billDetailIds, currentUser);
+        }
+
         #endregion
     }
 }

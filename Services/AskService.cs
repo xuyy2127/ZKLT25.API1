@@ -980,7 +980,7 @@ namespace ZKLT25.API.Services
                     query = query.Where(x => x.AskDate <= qto.EndDate.Value);
                 }
 
-                // 价格状态过滤（根据Timeout原始值判断）
+                // 价格状态过滤
                 if (qto.IsExpired.HasValue)
                 {
                     if (qto.IsExpired.Value)
@@ -1000,8 +1000,7 @@ namespace ZKLT25.API.Services
 
                 // 分页
                 var pagedResult = await PaginationList<Ask_DataFTDto>.CreateAsync(qto.PageNumber, qto.PageSize, query);
-                
-                // 在内存中计算文本字段
+
                 foreach (var item in pagedResult)
                 {
                     item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
@@ -1488,6 +1487,46 @@ namespace ZKLT25.API.Services
             }
         }
 
+        /// <summary>
+        /// 关闭项目（将状态从发起0改为已关闭-1）
+        /// </summary>
+        /// <param name="billDetailIds">要关闭的明细ID列表</param>
+        /// <param name="currentUser">当前用户</param>
+        /// <returns>操作结果</returns>
+        public async Task<ResultModel<int>> CloseProjectAsync(List<int> billDetailIds, string? currentUser)
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var targetDetails = await _db.Ask_BillDetail
+                    .Where(x => billDetailIds.Contains(x.ID) && x.State == 0)
+                    .ToListAsync();
+
+                foreach (var detail in targetDetails)
+                {
+                    detail.State = -1; 
+                    
+                    var billLog = new Ask_BillLog
+                    {
+                        BillDetailID = detail.ID,
+                        State = -1,
+                        KDate = DateTime.Now,
+                        KUser = currentUser
+                    };
+                    _db.Ask_BillLog.Add(billLog);
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return ResultModel<int>.Ok(targetDetails.Count);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return ResultModel<int>.Error($"关闭项目失败：{ex.Message}");
+            }
+        }
 
 
         #endregion
