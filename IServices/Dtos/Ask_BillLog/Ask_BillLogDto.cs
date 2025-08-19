@@ -3,6 +3,11 @@ namespace ZKLT25.API.IServices.Dtos
     public class Ask_BillLogDto
     {
         /// <summary>
+        /// 主键ID
+        /// </summary>
+        public int ID { get; set; }
+        
+        /// <summary>
         /// 操作用户
         /// </summary>
         public string? KUser { get; set; }

@@ -37,9 +37,91 @@ namespace ZKLT25.API.Services
             CreateMap<Ask_Bill, Ask_BillDto>()
                 .ForMember(dest => dest.BillStateText, opt => opt.MapFrom(src => GetBillStateText(src.BillState)));
 
+            // Ask_DataFT 和 Ask_DataFTOut 共享映射配置
+            CreateDataFTMapping<Ask_DataFT>();
+            CreateDataFTMapping<Ask_DataFTOut>();
+            
+            // Ask_DataFJ 和 Ask_DataFJOut 共享映射配置
+            CreateDataFJMapping<Ask_DataFJ>();
+            CreateDataFJMapping<Ask_DataFJOut>();
+        }
 
+        /// <summary>
+        /// 创建DataFT相关的映射配置
+        /// </summary>
+        private void CreateDataFTMapping<T>() where T : class
+        {
+            CreateMap<T, Ask_DataFTDto>()
+                .ForMember(dest => dest.IsPreProBindText, opt => opt.MapFrom(src => GetPreProBindText(GetIsPreProBind(src))))
+                .ForMember(dest => dest.PriceStatusText, opt => opt.MapFrom(src => GetPriceStatusText(GetTimeout(src))))
+                .ForMember(dest => dest.AvailableActions, opt => opt.MapFrom(src => GetAvailableActions(GetTimeout(src))));
+        }
 
+        /// <summary>
+        /// 获取IsPreProBind值
+        /// </summary>
+        private static int GetIsPreProBind<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFT dataFT => dataFT.IsPreProBind,
+                Ask_DataFTOut dataFTOut => dataFTOut.IsPreProBind,
+                _ => 0
+            };
+        }
 
+        /// <summary>
+        /// 获取timeout值
+        /// </summary>
+        private static int? GetTimeout<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFT dataFT => dataFT.Timeout,
+                Ask_DataFTOut dataFTOut => dataFTOut.Timeout,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// 创建DataFJ相关的映射配置
+        /// </summary>
+        private void CreateDataFJMapping<T>() where T : class
+        {
+            CreateMap<T, Ask_DataFJDto>()
+                .ForMember(dest => dest.IsPreProBindText, opt => opt.MapFrom(src => GetPreProBindText(GetIsPreProBindFJ(src))))
+                .ForMember(dest => dest.PriceStatusText, opt => opt.MapFrom(src => GetPriceStatusText(GetTimeoutFJ(src))))
+                .ForMember(dest => dest.AvailableActions, opt => opt.MapFrom(src => GetAvailableActions(GetTimeoutFJ(src))))
+                .ForMember(dest => dest.ProjDay, opt => opt.MapFrom(src => GetProjDayFJ(src)))
+                .ForMember(dest => dest.Day1, opt => opt.MapFrom(src => GetDay1FJ(src)))
+                .ForMember(dest => dest.Day2, opt => opt.MapFrom(src => GetDay2FJ(src)))
+                .ForMember(dest => dest.Memo1, opt => opt.MapFrom(src => GetMemo1FJ(src)));
+        }
+
+        /// <summary>
+        /// 获取DataFJ的IsPreProBind值
+        /// </summary>
+        private static int GetIsPreProBindFJ<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFJ dataFJ => dataFJ.IsPreProBind,
+                Ask_DataFJOut dataFJOut => dataFJOut.IsPreProBind,
+                _ => 0
+            };
+        }
+
+        /// <summary>
+        /// 获取DataFJ的Timeout值
+        /// </summary>
+        private static int? GetTimeoutFJ<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFJ dataFJ => dataFJ.Timeout,
+                Ask_DataFJOut dataFJOut => dataFJOut.Timeout,
+                _ => null
+            };
         }
 
         /// <summary>
@@ -83,6 +165,86 @@ namespace ZKLT25.API.Services
             };
         }
 
+        /// <summary>
+        /// 获取项目绑定状态显示文本
+        /// </summary>
+        public static string GetPreProBindText(int isPreProBind)
+        {
+            return isPreProBind switch
+            {
+                1 => "绑定项目",
+                0 => "不绑定项目",
+                _ => "其他"
+            };
+        }
+
+        /// <summary>
+        /// 获取价格状态显示文本
+        /// </summary>
+        public static string GetPriceStatusText(int? timeout)
+        {
+            return (timeout.HasValue && timeout.Value > 0) ? "已过期" : "未过期";
+        }
+
+        /// <summary>
+        /// 获取可执行的价格状态操作
+        /// </summary>
+        public static string GetAvailableActions(int? timeout)
+        {
+            return (timeout.HasValue && timeout.Value > 0) ? "设置有效" : "延长有效期,设置过期";
+        }
+
+        /// <summary>
+        /// DataFJ ProjDay值
+        /// </summary>
+        private static string? GetProjDayFJ<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFJ dataFJ => dataFJ.ProjDay,
+                Ask_DataFJOut dataFJOut => dataFJOut.ProjDay,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// DataFJ Day1值
+        /// </summary>
+        private static string? GetDay1FJ<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFJ dataFJ => dataFJ.Day1,
+                Ask_DataFJOut dataFJOut => dataFJOut.Day1,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// DataFJ Day2值
+        /// </summary>
+        private static string? GetDay2FJ<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFJ dataFJ => dataFJ.Day2,
+                Ask_DataFJOut dataFJOut => dataFJOut.Day2,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// DataFJ Memo1值
+        /// </summary>
+        private static string? GetMemo1FJ<T>(T source)
+        {
+            return source switch
+            {
+                Ask_DataFJ dataFJ => dataFJ.Memo1,
+                Ask_DataFJOut dataFJOut => dataFJOut.Memo1,
+                _ => null
+            };
+        }
 
     }
 }

@@ -1,8 +1,13 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ZKLT25.API.Models
 {
-    public class Ask_DataFT
+    /// <summary>
+    /// 询价数据外部表
+    /// </summary>
+    [Table("Ask_DataFTOut")]
+    public class Ask_DataFTOut
     {
         [Key]
         public int ID { get; set; }
@@ -120,7 +125,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 价格
         /// </summary>
-        public double? Price { get; set; }
+        public float? Price { get; set; }
         
         /// <summary>
         /// 供应商
@@ -165,7 +170,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 价格比例
         /// </summary>
-        public double? PriceRatio { get; set; }
+        public float? PriceRatio { get; set; }
         
         /// <summary>
         /// 账单详情ID

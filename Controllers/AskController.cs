@@ -307,6 +307,101 @@ namespace ZKLT25.API.Controllers
         {
             return await _service.GetBillLogsAsync(qto);
         }
+        #endregion
+
+        #region 阀体附件价格查询
+        /// <summary>
+        /// 分页查询阀体价格
+        /// </summary>
+        /// <param name="qto">查询参数</param>
+        /// <returns></returns>
+        [HttpGet("GetDataFTPagedList")]
+        public async Task<ResultModel<PaginationList<Ask_DataFTDto>>> GetDataFTPagedListAsync([FromQuery] Ask_DataFTQto qto)
+        {
+            var res = await _service.GetDataFTPagedListAsync(qto);
+            if (res.Data != null)
+                Response.Headers.Append("TotalCount", res.Data.TotalCount.ToString());
+            return res;
+        }
+
+        /// <summary>
+        /// 分页查询附件价格
+        /// </summary>
+        /// <param name="qto">查询参数</param>
+        /// <returns></returns>
+        [HttpGet("GetDataFJPagedList")]
+        public async Task<ResultModel<PaginationList<Ask_DataFJDto>>> GetDataFJPagedListAsync([FromQuery] Ask_DataFJQto qto)
+        {
+            var res = await _service.GetDataFJPagedListAsync(qto);
+            if (res.Data != null)
+                Response.Headers.Append("TotalCount", res.Data.TotalCount.ToString());
+            return res;
+        }
+
+        /// <summary>
+        /// 设置阀体价格状态
+        /// </summary>
+        /// <param name="request">请求参数</param>
+        /// <returns></returns>
+        [HttpPost("SetDataFTPriceStatus")]
+        public async Task<ResultModel<bool>> SetDataFTPriceStatusAsync([FromBody] SetPriceStatusRequest request)
+        {
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.SetPriceStatusAsync(request.Id, request.Action, request.ExtendDays, currentUser, "DataFT");
+        }
+
+        /// <summary>
+        /// 设置附件价格状态
+        /// </summary>
+        /// <param name="request">请求参数</param>
+        /// <returns></returns>
+        [HttpPost("SetDataFJPriceStatus")]
+        public async Task<ResultModel<bool>> SetDataFJPriceStatusAsync([FromBody] SetPriceStatusRequest request)
+        {
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.SetPriceStatusAsync(request.Id, request.Action, request.ExtendDays, currentUser, "DataFJ");
+        }
+        #endregion
+
+        #region 导出
+        /// <summary>
+        /// 导出附件询价数据为 Excel 文件
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns>Excel 文件下载</returns>
+        [HttpPost("DataFJExcelList")]
+        public async Task<IActionResult> DataFJExcelListAsync([FromBody] Ask_DataFJQto qto)
+        {
+            try
+            {
+                var excelBytes = await _service.DataFJExcelAsync(qto);
+                var fileName = $"附件询价数据_{DateTime.Now:yyyyMMddHHmm}.xlsx";
+                
+                return File(excelBytes, 
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                    fileName);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"导出失败：{ex.Message}" });
+            }
+        }
+
+        #endregion
+
+        #region 价格备注录入
+
+        /// <summary>
+        /// 录入价格备注
+        /// </summary>
+        [HttpPost("SetPriceRemark")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
+        public async Task<ResultModel<int>> SetPriceRemarkAsync([FromBody] BillPriceCto cto)
+        {
+            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            return await _service.SetPriceRemarkAsync(cto, currentUser);
+        }
 
         #endregion
     }

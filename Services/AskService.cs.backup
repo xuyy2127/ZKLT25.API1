@@ -747,6 +747,7 @@ namespace ZKLT25.API.Services
         {
             try
             {
+                // 使用 LEFT JOIN 查询：所有明细 LEFT JOIN 对应的价格信息
                 var query = from detail in _db.Ask_BillDetail.Where(d => d.BillID == int.Parse(billId))
 
                             join priceInfo in _db.Ask_BillPrice
@@ -819,75 +820,40 @@ namespace ZKLT25.API.Services
                 return ResultModel<List<Ask_BillLogDto>>.Error($"查询失败: {ex.Message}");
             }
         }
-        #endregion
 
-        #region 阀体附件价格查询
         /// <summary>
-        /// 分页查阀体价格
+        /// 分页查询询价数据（重构后，消除重复代码）
         /// </summary>
         public async Task<ResultModel<PaginationList<Ask_DataFTDto>>> GetDataFTPagedListAsync(Ask_DataFTQto qto)
         {
             try
             {
-                // 分别构建内部和外部来源的查询，再按需 Union
-                var internalQueryFT = from d in _db.Ask_DataFT
-                                      join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                      from supplier in supplierGroup.DefaultIfEmpty()
-                                      join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
-                                      from billPrice in priceGroup.DefaultIfEmpty()
-                                      join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                      from billFile in fileGroup.DefaultIfEmpty()
-                                      join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
-                                      from billDetail in detailGroup.DefaultIfEmpty()
-                                      join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
-                                      from bill in billGroup.DefaultIfEmpty()
-                                      select new Ask_DataFTDto
-                                      {
-                                          ID = d.ID,
-                                          BillID = billDetail != null ? billDetail.BillID : null,
-                                          AskProjName = d.AskProjName,
-                                          SuppName = supplier != null ? supplier.SuppName : "",
-                                          Price = billPrice != null ? billPrice.Price : null,
-                                          BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                          AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                          AskDate = d.AskDate,
-                                          OrdName = d.OrdName,
-                                          OrdVersion = d.OrdVersion,
-                                          OrdDN = d.OrdDN,
-                                          OrdPN = d.OrdPN,
-                                          OrdLJ = d.OrdLJ,
-                                          OrdFG = d.OrdFG,
-                                          OrdFT = d.OrdFT,
-                                          OrdFNJ = d.OrdFNJ,
-                                          OrdTL = d.OrdTL,
-                                          OrdKV = d.OrdKV,
-                                          OrdFlow = d.OrdFlow,
-                                          OrdLeak = d.OrdLeak,
-                                          OrdQYDY = d.OrdQYDY,
-                                          Num = d.Num,
-                                          OrdUnit = d.OrdUnit,
-                                          IsPreProBind = d.IsPreProBind,
-                                          DocName = bill != null ? bill.DocName : null,
-                                          DocNameStatus = !string.IsNullOrWhiteSpace(bill != null ? bill.DocName : null) ? "已上传" : "未上传",
-                                          FileName = billFile != null ? billFile.FileName : null,
-                                          FileNameStatus = !string.IsNullOrWhiteSpace(billFile != null ? billFile.FileName : null) ? "已上传" : "未上传",
-                                          IsInvalid = 1,
-                                          Timeout = d.Timeout
-                                      };
+                // 步骤一：构建基础查询
+                var query = BuildFTBaseQuery(qto);
 
-                var externalQueryFT = from d in _db.Set<Ask_DataFTOut>()
-                                      join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                      from supplier in supplierGroup.DefaultIfEmpty()
-                                      join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
-                                      from billPrice in priceGroup.DefaultIfEmpty()
-                                      join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                      from billFile in fileGroup.DefaultIfEmpty()
-                                      join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
-                                      from billDetail in detailGroup.DefaultIfEmpty()
-                                      join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
-                                      from bill in billGroup.DefaultIfEmpty()
-                                      select new Ask_DataFTDto
-                                      {
+                // 步骤二：应用筛选条件
+                query = ApplyFTFilters(query, qto);
+
+                // 步骤三：排序和分页
+                query = query.OrderByDescending(x => x.AskDate);
+                var pagedResult = await PaginationList<Ask_DataFTDto>.CreateAsync(qto.PageNumber, qto.PageSize, query);
+                
+                // 步骤四：内存中的后处理
+                ProcessFTResults(pagedResult);
+                
+                return ResultModel<PaginationList<Ask_DataFTDto>>.Ok(pagedResult);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<PaginationList<Ask_DataFTDto>>.Error($"查询失败：{ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 分页查询附件询价数据
+        /// </summary>
+        public async Task<ResultModel<PaginationList<Ask_DataFJDto>>> GetDataFJPagedListAsync(Ask_DataFJQto qto)
+        {
                                           ID = d.ID,
                                           BillID = billDetail != null ? billDetail.BillID : null,
                                           AskProjName = d.AskProjName,
@@ -1007,6 +973,8 @@ namespace ZKLT25.API.Services
                     item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
                     item.PriceStatusText = ZKLT25Profile.GetPriceStatusText(item.Timeout);
                     item.AvailableActions = ZKLT25Profile.GetAvailableActions(item.Timeout);
+                    item.DocNameStatus = string.IsNullOrWhiteSpace(item.DocName) ? "未上传" : "已上传";
+                    item.FileNameStatus = string.IsNullOrWhiteSpace(item.FileName) ? "未上传" : "已上传";
                 }
                 
                 return ResultModel<PaginationList<Ask_DataFTDto>>.Ok(pagedResult);
@@ -1018,7 +986,7 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 分页查询附件价格
+        /// 分页查询附件询价数据
         /// </summary>
         public async Task<ResultModel<PaginationList<Ask_DataFJDto>>> GetDataFJPagedListAsync(Ask_DataFJQto qto)
         {
@@ -1264,9 +1232,7 @@ namespace ZKLT25.API.Services
                     throw new ArgumentException("无效的操作类型");
             }
         }
-        #endregion
 
-        #region 导出为excel表
         /// <summary>
         /// 导出附件询价数据为 Excel 文件
         /// </summary>
@@ -1353,10 +1319,10 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 价格/备注录入
+        #region 价格录入
 
         /// <summary>
-        /// 录入价格备注
+        /// 录入价格备注（支持单个和批量）
         /// </summary>
         /// <param name="cto">价格录入请求</param>
         /// <param name="currentUser">当前用户</param>
@@ -1366,11 +1332,17 @@ namespace ZKLT25.API.Services
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
+                // 1. 根据ID列表获取目标记录
                 var targetDetails = await _db.Ask_BillDetail
                     .Where(x => cto.BillDetailIDs.Contains(x.ID) && x.State == 0)
                     .ToListAsync();
 
-                // 批量操作验证Type和Version是否一致
+                if (!targetDetails.Any())
+                {
+                    return ResultModel<int>.Error("未找到符合条件的发起状态记录");
+                }
+
+                // 2. 如果是批量操作（多个ID），验证Type和Version是否一致
                 if (cto.BillDetailIDs.Count > 1)
                 {
                     var firstRecord = targetDetails.First();
@@ -1380,23 +1352,27 @@ namespace ZKLT25.API.Services
                     
                     if (differentRecords.Any())
                     {
-                        return ResultModel<int>.Error($"类型和型号必须相同。首个记录：{firstRecord.Type}-{firstRecord.Version}");
+                        return ResultModel<int>.Error($"批量操作要求所有记录具有相同的类型和型号。首个记录：{firstRecord.Type}-{firstRecord.Version}");
                     }
                 }
 
+                // 3. 预加载所有相关数据
                 var allDetailIDs = targetDetails.Select(d => d.ID).ToList();
                 var supplierIdStr = cto.SuppID?.ToString();
                 var timeout = -(cto.ValidityDays ?? 1);
                 var isPreProBind = cto.IsPreProBind ?? 0;
 
+                // 预加载 BillPrice 数据
                 var existingBillPrices = await _db.Ask_BillPrice
                     .Where(p => allDetailIDs.Contains(p.BillDetailID.Value) && p.SuppID == cto.SuppID)
                     .ToListAsync();
                 var billPriceDict = existingBillPrices.ToDictionary(x => x.BillDetailID.Value);
 
+                // 分类明细ID
                 var valveBodyIds = targetDetails.Where(x => x.Type == "阀体").Select(x => x.ID).ToList();
                 var attachmentIds = targetDetails.Where(x => x.Type != "阀体").Select(x => x.ID).ToList();
 
+                // 预加载 DataFT 相关数据
                 var dataFTList = valveBodyIds.Any() 
                     ? await _db.Ask_DataFT.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
                     : new List<Ask_DataFT>();
@@ -1404,6 +1380,7 @@ namespace ZKLT25.API.Services
                     ? await _db.Ask_DataFTOut.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
                     : new List<Ask_DataFTOut>();
 
+                // 预加载 DataFJ 相关数据
                 var dataFJList = attachmentIds.Any()
                     ? await _db.Ask_DataFJ.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
                     : new List<Ask_DataFJ>();
@@ -1411,6 +1388,7 @@ namespace ZKLT25.API.Services
                     ? await _db.Ask_DataFJOut.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
                     : new List<Ask_DataFJOut>();
 
+                // 4. 循环处理每条记录（无数据库查询）
                 foreach (var detail in targetDetails)
                 {
                     // 创建/更新 BillPrice
@@ -1454,7 +1432,7 @@ namespace ZKLT25.API.Services
                     _db.Ask_BillLog.Add(billLog);
                 }
 
-                // 5. 批量更新 DataFT/DataFJ 表
+                // 5. 批量更新 DataFT/DataFJ 表（合并重复逻辑）
                 foreach (var item in dataFTList)
                 {
                     item.Timeout = timeout;

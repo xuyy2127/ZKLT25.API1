@@ -154,7 +154,7 @@ namespace ZKLT25.API.IServices
 
         #endregion
 
-        #region 询价
+        #region 询价详情
         /// <summary>
         /// 分页查询询价单据
         /// </summary>
@@ -173,6 +173,54 @@ namespace ZKLT25.API.IServices
         /// 获取询价状态日志
         /// </summary>
         Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync(Ask_BillLogQto qto);
+        #endregion
+
+        #region 阀体附件价格查询
+        /// <summary>
+        /// 分页查询阀体价格
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns></returns>
+        Task<ResultModel<PaginationList<Ask_DataFTDto>>> GetDataFTPagedListAsync(Ask_DataFTQto qto);
+
+        /// <summary>
+        /// 分页查询附件价格
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns></returns>
+        Task<ResultModel<PaginationList<Ask_DataFJDto>>> GetDataFJPagedListAsync(Ask_DataFJQto qto);
+
+        /// <summary>
+        /// 设置价格状态
+        /// </summary>
+        /// <param name="id">记录ID</param>
+        /// <param name="action">操作类型：SetValid(设置有效)、SetExpired(设置过期)、ExtendValid(延长有效期)</param>
+        /// <param name="extendDays">延长天数（仅在ExtendValid时需要）</param>
+        /// <param name="currentUser">当前用户</param>
+        /// <param name="entityType">实体类型：DataFT 或 DataFJ</param>
+        /// <returns></returns>
+        Task<ResultModel<bool>> SetPriceStatusAsync(int id, string action, int? extendDays, string? currentUser, string entityType = "DataFT");
+        #endregion
+
+        #region 导出
+        /// <summary>
+        /// 导出附件询价数据为 Excel 文件
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns>Excel 文件字节数组</returns>
+        Task<byte[]> DataFJExcelAsync(Ask_DataFJQto qto);
+        #endregion
+
+        #region 价格备注录入接口
+
+        /// <summary>
+        /// 录入价格备注
+        /// </summary>
+        /// <param name="cto">价格录入请求</param>
+        /// <param name="currentUser">当前用户</param>
+        /// <returns>返回影响的记录数</returns>
+        Task<ResultModel<int>> SetPriceRemarkAsync(BillPriceCto cto, string? currentUser);
+
         #endregion
 
     }
