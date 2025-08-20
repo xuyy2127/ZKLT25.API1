@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace ZKLT25.API.IServices.Dtos
 {
     /// <summary>
-    /// 价格录入请求DTO（支持单个和批量）
+    /// 价格录入请求DTO
     /// </summary>
     public class BillPriceCto
     {

@@ -339,27 +339,15 @@ namespace ZKLT25.API.Controllers
         }
 
         /// <summary>
-        /// 设置阀体价格状态
+        /// 设置价格状态
         /// </summary>
         /// <param name="request">请求参数</param>
         /// <returns></returns>
-        [HttpPost("SetDataFTPriceStatus")]
-        public async Task<ResultModel<bool>> SetDataFTPriceStatusAsync([FromBody] SetPriceStatusRequest request)
+        [HttpPost("SetPriceStatus")]
+        public async Task<ResultModel<bool>> SetPriceStatusAsync([FromBody] SetPriceStatusRequest request)
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            return await _service.SetPriceStatusAsync(request.Id, request.Action, request.ExtendDays, currentUser, "DataFT");
-        }
-
-        /// <summary>
-        /// 设置附件价格状态
-        /// </summary>
-        /// <param name="request">请求参数</param>
-        /// <returns></returns>
-        [HttpPost("SetDataFJPriceStatus")]
-        public async Task<ResultModel<bool>> SetDataFJPriceStatusAsync([FromBody] SetPriceStatusRequest request)
-        {
-            var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            return await _service.SetPriceStatusAsync(request.Id, request.Action, request.ExtendDays, currentUser, "DataFJ");
+            return await _service.SetPriceStatusAsync(request.Ids, request.Action, request.ExtendDays, currentUser, request.EntityType);
         }
         #endregion
 

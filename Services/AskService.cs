@@ -1053,7 +1053,7 @@ namespace ZKLT25.API.Services
                                           IsPreProBind = d.IsPreProBind,
                                           DocName = bill.DocName,
                                           FileName = billFile != null ? billFile.FileName : null,
-                                          Timeout = d.Timeout, // 先获取原始值
+                                          Timeout = d.Timeout, 
                                           DocNameStatus = !string.IsNullOrWhiteSpace(bill.DocName) ? "已上传" : "未上传",
                                           FileNameStatus = !string.IsNullOrWhiteSpace(billFile != null ? billFile.FileName : null) ? "已上传" : "未上传",
                                           IsInvalid = 1,
@@ -1094,7 +1094,7 @@ namespace ZKLT25.API.Services
                                           IsPreProBind = d.IsPreProBind,
                                           DocName = bill.DocName,
                                           FileName = billFile != null ? billFile.FileName : null,
-                                          Timeout = d.Timeout, // 先获取原始值
+                                          Timeout = d.Timeout,
                                           DocNameStatus = !string.IsNullOrWhiteSpace(bill.DocName) ? "已上传" : "未上传",
                                           FileNameStatus = !string.IsNullOrWhiteSpace(billFile != null ? billFile.FileName : null) ? "已上传" : "未上传",
                                           IsInvalid = 0,
@@ -1197,42 +1197,38 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 设置价格状态
         /// </summary>
-        public async Task<ResultModel<bool>> SetPriceStatusAsync(int id, string action, int? extendDays, string? currentUser, string entityType = "DataFT")
+        public async Task<ResultModel<bool>> SetPriceStatusAsync(List<int> ids, string action, int? extendDays, string? currentUser, string entityType)
         {
             try
             {
-                object? entity = null;
-
-                switch (entityType.ToUpper())
-                {
-                    case "DATAFT":
-                        entity = await _db.Ask_DataFT.FindAsync(id);
-                        break;
-                    case "DATAFJ":
-                        entity = await _db.Ask_DataFJ.FindAsync(id);
-                        break;
-                    default:
-                        return ResultModel<bool>.Error("无效的实体类型");
-                }
-
-                if (entity == null)
-                {
-                    return ResultModel<bool>.Error("记录不存在");
-                }
-
                 var newTimeoutValue = CalculateTimeoutValue(action, extendDays);
                 if (!newTimeoutValue.HasValue)
                 {
                     return ResultModel<bool>.Error("延长有效期需要指定有效的天数");
                 }
 
-                if (entity is Ask_DataFT dataFT)
+                switch (entityType.ToUpper())
                 {
-                    dataFT.Timeout = newTimeoutValue.Value;
-                }
-                else if (entity is Ask_DataFJ dataFJ)
-                {
-                    dataFJ.Timeout = newTimeoutValue.Value;
+                    case "DATAFT":
+                        {
+                            var entities = await _db.Ask_DataFT.Where(x => ids.Contains(x.ID)).ToListAsync();
+                            foreach (var entity in entities)
+                            {
+                                entity.Timeout = newTimeoutValue.Value;
+                            }
+                        }
+                        break;
+                    case "DATAFJ":
+                        {
+                            var entities = await _db.Ask_DataFJ.Where(x => ids.Contains(x.ID)).ToListAsync();
+                            foreach (var entity in entities)
+                            {
+                                entity.Timeout = newTimeoutValue.Value;
+                            }
+                        }
+                        break;
+                    default:
+                        return ResultModel<bool>.Error("无效的实体类型");
                 }
 
                 await _db.SaveChangesAsync();
@@ -1243,6 +1239,8 @@ namespace ZKLT25.API.Services
                 return ResultModel<bool>.Error($"操作失败：{ex.Message}");
             }
         }
+
+
 
         /// <summary>
         /// 提取状态计算逻辑
@@ -1453,7 +1451,7 @@ namespace ZKLT25.API.Services
                     _db.Ask_BillLog.Add(billLog);
                 }
 
-                // 5. 批量更新 DataFT/DataFJ 表
+                // 批量更新
                 foreach (var item in dataFTList)
                 {
                     item.Timeout = timeout;

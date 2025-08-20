@@ -193,13 +193,13 @@ namespace ZKLT25.API.IServices
         /// <summary>
         /// 设置价格状态
         /// </summary>
-        /// <param name="id">记录ID</param>
-        /// <param name="action">操作类型：SetValid(设置有效)、SetExpired(设置过期)、ExtendValid(延长有效期)</param>
-        /// <param name="extendDays">延长天数（仅在ExtendValid时需要）</param>
+        /// <param name="ids">记录ID列表</param>
+        /// <param name="action">操作类型：SETVALID(设置有效)、SETEXPIRED(设置过期)、EXTENDVALID(延长有效期)</param>
+        /// <param name="extendDays">延长天数（仅在EXTENDVALID时需要）</param>
         /// <param name="currentUser">当前用户</param>
         /// <param name="entityType">实体类型：DataFT 或 DataFJ</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> SetPriceStatusAsync(int id, string action, int? extendDays, string? currentUser, string entityType = "DataFT");
+        Task<ResultModel<bool>> SetPriceStatusAsync(List<int> ids, string action, int? extendDays, string? currentUser, string entityType);
         #endregion
 
         #region 导出
@@ -222,7 +222,7 @@ namespace ZKLT25.API.IServices
         Task<ResultModel<int>> SetPriceRemarkAsync(BillPriceCto cto, string? currentUser);
 
         /// <summary>
-        /// 关闭项目（将状态从发起0改为已关闭-1）
+        /// 关闭项目
         /// </summary>
         /// <param name="billDetailIds">要关闭的明细ID列表</param>
         /// <param name="currentUser">当前用户</param>
