@@ -383,7 +383,7 @@ namespace ZKLT25.API.Controllers
         /// 录入价格备注
         /// </summary>
         [HttpPost("SetPriceRemark")]
-        [Consumes("application/json")]
+        [Consumes("multipart/form-data")]
         [Produces("application/json")]
         public async Task<ResultModel<int>> SetPriceRemarkAsync([FromBody] BillPriceCto cto)
         {

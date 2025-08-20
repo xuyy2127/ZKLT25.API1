@@ -61,6 +61,444 @@ namespace ZKLT25.API.Services
             }
         }
 
+        /// <summary>
+        /// 根据文件名返回上传状态文本
+        /// </summary>
+        /// <param name="fileName">文件名</param>
+        /// <returns>下载/未上传</returns>
+        private static string GetUploadStatusText(string? fileName)
+        {
+            return string.IsNullOrWhiteSpace(fileName) ? "未上传" : "下载";
+        }
+
+        /// <summary>
+        /// 装饰阀体价格查询结果的派生显示字段
+        /// </summary>
+        /// <param name="items">结果集</param>
+        private void DecorateFTList(IEnumerable<Ask_DataFTDto> items)
+        {
+            foreach (var item in items)
+            {
+                item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
+                item.PriceStatusText = ZKLT25Profile.GetPriceStatusText(item.Timeout);
+                item.AvailableActions = ZKLT25Profile.GetAvailableActions(item.Timeout);
+
+                // 统一覆盖文件状态文案
+                item.DocNameStatus = GetUploadStatusText(item.DocName);
+                item.FileNameStatus = GetUploadStatusText(item.FileName);
+            }
+        }
+
+        /// <summary>
+        /// 装饰附件价格查询结果的派生显示字段
+        /// </summary>
+        /// <param name="items">结果集</param>
+        private void DecorateFJList(IEnumerable<Ask_DataFJDto> items)
+        {
+            foreach (var item in items)
+            {
+                item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
+                item.PriceStatusText = ZKLT25Profile.GetPriceStatusText(item.Timeout);
+                item.AvailableActions = ZKLT25Profile.GetAvailableActions(item.Timeout);
+                item.DocNameStatus = GetUploadStatusText(item.DocName);
+                item.FileNameStatus = GetUploadStatusText(item.FileName);
+            }
+        }
+
+        /// <summary>
+        /// 阀体价格查询：应用筛选条件
+        /// </summary>
+        private static IQueryable<Ask_DataFTDto> ApplyFTFilters(IQueryable<Ask_DataFTDto> query, Ask_DataFTQto qto)
+        {
+            if (qto.BillID.HasValue)
+            {
+                query = query.Where(x => x.BillID == qto.BillID.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.AskProjName))
+            {
+                query = query.Where(x => x.AskProjName!.Contains(qto.AskProjName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.SuppName))
+            {
+                query = query.Where(x => x.SuppName.Contains(qto.SuppName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdVersion))
+            {
+                query = query.Where(x => x.OrdVersion!.Contains(qto.OrdVersion));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdDN))
+            {
+                query = query.Where(x => x.OrdDN!.Contains(qto.OrdDN));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdPN))
+            {
+                query = query.Where(x => x.OrdPN!.Contains(qto.OrdPN));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdFT))
+            {
+                query = query.Where(x => x.OrdFT!.Contains(qto.OrdFT));
+            }
+
+            if (qto.StartDate.HasValue)
+            {
+                query = query.Where(x => x.AskDate >= qto.StartDate.Value);
+            }
+
+            if (qto.EndDate.HasValue)
+            {
+                query = query.Where(x => x.AskDate <= qto.EndDate.Value);
+            }
+
+            if (qto.IsExpired.HasValue)
+            {
+                if (qto.IsExpired.Value)
+                {
+                    query = query.Where(x => x.Timeout > 0);
+                }
+                else
+                {
+                    query = query.Where(x => x.Timeout <= 0);
+                }
+            }
+
+            return query;
+        }
+
+        /// <summary>
+        /// 附件价格查询：应用筛选条件
+        /// </summary>
+        private static IQueryable<Ask_DataFJDto> ApplyFJFilters(IQueryable<Ask_DataFJDto> query, Ask_DataFJQto qto)
+        {
+            if (qto.BillID.HasValue)
+            {
+                query = query.Where(x => x.BillID == qto.BillID.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.AskProjName))
+            {
+                query = query.Where(x => x.AskProjName!.Contains(qto.AskProjName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.SuppName))
+            {
+                query = query.Where(x => x.SuppName.Contains(qto.SuppName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdName))
+            {
+                query = query.Where(x => x.OrdName!.Contains(qto.OrdName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(qto.FJVersion))
+            {
+                query = query.Where(x => x.FJVersion!.Contains(qto.FJVersion));
+            }
+
+            if (qto.StartDate.HasValue)
+            {
+                query = query.Where(x => x.AskDate >= qto.StartDate.Value);
+            }
+
+            if (qto.EndDate.HasValue)
+            {
+                query = query.Where(x => x.AskDate <= qto.EndDate.Value);
+            }
+
+            if (qto.IsExpired.HasValue)
+            {
+                if (qto.IsExpired.Value)
+                {
+                    query = query.Where(x => x.Timeout > 0);
+                }
+                else
+                {
+                    query = query.Where(x => x.Timeout <= 0);
+                }
+            }
+
+            return query;
+        }
+
+        /// <summary>
+        /// 统一排序（默认询价日期倒序）
+        /// </summary>
+        private static IQueryable<Ask_DataFTDto> ApplySorting(IQueryable<Ask_DataFTDto> query)
+        {
+            return query.OrderByDescending(x => x.AskDate);
+        }
+
+        private static IQueryable<Ask_DataFJDto> ApplySorting(IQueryable<Ask_DataFJDto> query)
+        {
+            return query.OrderByDescending(x => x.AskDate);
+        }
+
+        /// <summary>
+        /// 统一分页
+        /// </summary>
+        private static Task<PaginationList<T>> PaginateAsync<T>(int pageNumber, int pageSize, IQueryable<T> query) where T : class
+        {
+            return PaginationList<T>.CreateAsync(pageNumber, pageSize, query);
+        }
+
+        /// <summary>
+        /// 构建阀体价格-内部视图查询（联表并投影为 Ask_DataFTDto）
+        /// </summary>
+        private IQueryable<Ask_DataFTDto> BuildDataFTInternalQuery()
+        {
+            var internalQueryFT = from d in _db.Ask_DataFT
+                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                                  from supplier in supplierGroup.DefaultIfEmpty()
+                                  join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
+                                  from billPrice in priceGroup.DefaultIfEmpty()
+                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
+                                  from billFile in fileGroup.DefaultIfEmpty()
+                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
+                                  from billDetail in detailGroup.DefaultIfEmpty()
+                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
+                                  from bill in billGroup.DefaultIfEmpty()
+                                  select new Ask_DataFTDto
+                                  {
+                                      ID = d.ID,
+                                      BillID = billDetail != null ? billDetail.BillID : null,
+                                      AskProjName = d.AskProjName,
+                                      SuppName = supplier != null ? supplier.SuppName : "",
+                                      Price = billPrice != null ? billPrice.Price : null,
+                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
+                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
+                                      AskDate = d.AskDate,
+                                      OrdName = d.OrdName,
+                                      OrdVersion = d.OrdVersion,
+                                      OrdDN = d.OrdDN,
+                                      OrdPN = d.OrdPN,
+                                      OrdLJ = d.OrdLJ,
+                                      OrdFG = d.OrdFG,
+                                      OrdFT = d.OrdFT,
+                                      OrdFNJ = d.OrdFNJ,
+                                      OrdTL = d.OrdTL,
+                                      OrdKV = d.OrdKV,
+                                      OrdFlow = d.OrdFlow,
+                                      OrdLeak = d.OrdLeak,
+                                      OrdQYDY = d.OrdQYDY,
+                                      Num = d.Num,
+                                      OrdUnit = d.OrdUnit,
+                                      IsPreProBind = d.IsPreProBind,
+                                      DocName = bill != null ? bill.DocName : null,
+                                      FileName = billFile != null ? billFile.FileName : null,
+                                      IsInvalid = 1,
+                                      Timeout = d.Timeout
+                                  };
+
+            return internalQueryFT;
+        }
+
+        /// <summary>
+        /// 构建阀体价格-外部视图查询（联表并投影为 Ask_DataFTDto）
+        /// </summary>
+        private IQueryable<Ask_DataFTDto> BuildDataFTExternalQuery()
+        {
+            var externalQueryFT = from d in _db.Set<Ask_DataFTOut>()
+                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                                  from supplier in supplierGroup.DefaultIfEmpty()
+                                  join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
+                                  from billPrice in priceGroup.DefaultIfEmpty()
+                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
+                                  from billFile in fileGroup.DefaultIfEmpty()
+                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
+                                  from billDetail in detailGroup.DefaultIfEmpty()
+                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
+                                  from bill in billGroup.DefaultIfEmpty()
+                                  select new Ask_DataFTDto
+                                  {
+                                      ID = d.ID,
+                                      BillID = billDetail != null ? billDetail.BillID : null,
+                                      AskProjName = d.AskProjName,
+                                      SuppName = supplier != null ? supplier.SuppName : "",
+                                      Price = billPrice != null ? billPrice.Price : null,
+                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
+                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
+                                      AskDate = d.AskDate,
+                                      OrdName = d.OrdName,
+                                      OrdVersion = d.OrdVersion,
+                                      OrdDN = d.OrdDN,
+                                      OrdPN = d.OrdPN,
+                                      OrdLJ = d.OrdLJ,
+                                      OrdFG = d.OrdFG,
+                                      OrdFT = d.OrdFT,
+                                      OrdFNJ = d.OrdFNJ,
+                                      OrdTL = d.OrdTL,
+                                      OrdKV = d.OrdKV,
+                                      OrdFlow = d.OrdFlow,
+                                      OrdLeak = d.OrdLeak,
+                                      OrdQYDY = d.OrdQYDY,
+                                      Num = d.Num,
+                                      OrdUnit = d.OrdUnit,
+                                      IsPreProBind = d.IsPreProBind,
+                                      DocName = bill != null ? bill.DocName : null,
+                                      FileName = billFile != null ? billFile.FileName : null,
+                                      IsInvalid = 0,
+                                      Timeout = d.Timeout
+                                  };
+
+            return externalQueryFT;
+        }
+        /// <summary>
+        /// 构建附件价格-内部视图查询（联表并投影为 Ask_DataFJDto）
+        /// </summary>
+        private IQueryable<Ask_DataFJDto> BuildDataFJInternalQuery()
+        {
+            var internalQueryFJ = from d in _db.Ask_DataFJ
+                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID
+                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID
+                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                                  from supplier in supplierGroup.DefaultIfEmpty()
+                                  join bp in (
+                                      from p in _db.Ask_BillPrice
+                                      group p by p.BillDetailID into g
+                                      select new { BillDetailID = g.Key, BasicsPrice = g.Max(x => x.BasicsPrice ?? 0), AddPrice = g.Max(x => x.AddPrice ?? 0) }
+                                  ) on d.BillDetailID equals bp.BillDetailID into priceGroup
+                                  from billPrice in priceGroup.DefaultIfEmpty()
+                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
+                                  from billFile in fileGroup.DefaultIfEmpty()
+                                  select new Ask_DataFJDto
+                                  {
+                                      ID = d.ID,
+                                      BillID = billDetail.BillID,
+                                      AskProjName = d.AskProjName,
+                                      SuppName = supplier != null ? supplier.SuppName : "",
+                                      Price = (double?)d.Price,
+                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
+                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
+                                      AskDate = d.AskDate,
+                                      OrdName = d.FJType,
+                                      FJVersion = d.FJVersion,
+                                      Num = d.Num,
+                                      Unit = d.Unit,
+                                      IsPreProBind = d.IsPreProBind,
+                                      DocName = bill.DocName,
+                                      FileName = billFile != null ? billFile.FileName : null,
+                                      Timeout = d.Timeout,
+                                      IsInvalid = 1,
+                                      ProjDay = d.ProjDay,
+                                      Day1 = d.Day1,
+                                      Day2 = d.Day2,
+                                      Memo1 = d.Memo1,
+                                      BillIDText = billDetail.BillID.ToString()
+                                  };
+
+            return internalQueryFJ;
+        }
+
+        /// <summary>
+        /// 构建附件价格-外部视图查询（联表并投影为 Ask_DataFJDto）
+        /// </summary>
+        private IQueryable<Ask_DataFJDto> BuildDataFJExternalQuery()
+        {
+            var externalQueryFJ = from d in _db.Ask_DataFJOut
+                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID
+                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID
+                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                                  from supplier in supplierGroup.DefaultIfEmpty()
+                                  join bp in (
+                                      from p in _db.Ask_BillPrice
+                                      group p by p.BillDetailID into g
+                                      select new { BillDetailID = g.Key, BasicsPrice = g.Max(x => x.BasicsPrice ?? 0), AddPrice = g.Max(x => x.AddPrice ?? 0) }
+                                  ) on d.BillDetailID equals bp.BillDetailID into priceGroup
+                                  from billPrice in priceGroup.DefaultIfEmpty()
+                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
+                                  from billFile in fileGroup.DefaultIfEmpty()
+                                  select new Ask_DataFJDto
+                                  {
+                                      ID = d.ID,
+                                      BillID = billDetail.BillID,
+                                      AskProjName = d.AskProjName,
+                                      SuppName = supplier != null ? supplier.SuppName : "",
+                                      Price = (double?)d.Price,
+                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
+                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
+                                      AskDate = d.AskDate,
+                                      OrdName = d.FJType,
+                                      FJVersion = d.FJVersion,
+                                      Num = d.Num,
+                                      Unit = d.Unit,
+                                      IsPreProBind = d.IsPreProBind,
+                                      DocName = bill.DocName,
+                                      FileName = billFile != null ? billFile.FileName : null,
+                                      Timeout = d.Timeout,
+                                      IsInvalid = 0,
+                                      ProjDay = d.ProjDay,
+                                      Day1 = d.Day1,
+                                      Day2 = d.Day2,
+                                      Memo1 = d.Memo1,
+                                      BillIDText = billDetail.BillID.ToString()
+                                  };
+
+            return externalQueryFJ;
+        }
+
+        /// <summary>
+        /// 按视图选择（1=内部视图，0=外部视图，其它=合并）
+        /// </summary>
+        private static IQueryable<T> ComposeView<T>(IQueryable<T> internalQuery, IQueryable<T> externalQuery, int? isOutView)
+        {
+            if (isOutView == 1) return internalQuery;
+            if (isOutView == 0) return externalQuery;
+            return internalQuery.Union(externalQuery);
+        }
+
+        /// <summary>
+        /// 批量设置 Timeout 与 IsPreProBind（阀体-内部）
+        /// </summary>
+        private static void SetTimeoutAndBind(IEnumerable<Ask_DataFT> items, int timeout, int isPreProBind)
+        {
+            foreach (var item in items)
+            {
+                item.Timeout = timeout;
+                item.IsPreProBind = isPreProBind;
+            }
+        }
+
+        /// <summary>
+        /// 批量设置 Timeout 与 IsPreProBind（阀体-外部）
+        /// </summary>
+        private static void SetTimeoutAndBind(IEnumerable<Ask_DataFTOut> items, int timeout, int isPreProBind)
+        {
+            foreach (var item in items)
+            {
+                item.Timeout = timeout;
+                item.IsPreProBind = isPreProBind;
+            }
+        }
+
+        /// <summary>
+        /// 批量设置 Timeout 与 IsPreProBind（附件-内部）
+        /// </summary>
+        private static void SetTimeoutAndBind(IEnumerable<Ask_DataFJ> items, int timeout, int isPreProBind)
+        {
+            foreach (var item in items)
+            {
+                item.Timeout = timeout;
+                item.IsPreProBind = isPreProBind;
+            }
+        }
+
+        /// <summary>
+        /// 批量设置 Timeout 与 IsPreProBind（附件-外部）
+        /// </summary>
+        private static void SetTimeoutAndBind(IEnumerable<Ask_DataFJOut> items, int timeout, int isPreProBind)
+        {
+            foreach (var item in items)
+            {
+                item.Timeout = timeout;
+                item.IsPreProBind = isPreProBind;
+            }
+        }
+
         #region 阀体型号维护
         /// <summary>
         /// 分页查询阀体型号列表
@@ -830,183 +1268,20 @@ namespace ZKLT25.API.Services
             try
             {
                 // 分别构建内部和外部来源的查询，再按需 Union
-                var internalQueryFT = from d in _db.Ask_DataFT
-                                      join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                      from supplier in supplierGroup.DefaultIfEmpty()
-                                      join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
-                                      from billPrice in priceGroup.DefaultIfEmpty()
-                                      join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                      from billFile in fileGroup.DefaultIfEmpty()
-                                      join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
-                                      from billDetail in detailGroup.DefaultIfEmpty()
-                                      join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
-                                      from bill in billGroup.DefaultIfEmpty()
-                                      select new Ask_DataFTDto
-                                      {
-                                          ID = d.ID,
-                                          BillID = billDetail != null ? billDetail.BillID : null,
-                                          AskProjName = d.AskProjName,
-                                          SuppName = supplier != null ? supplier.SuppName : "",
-                                          Price = billPrice != null ? billPrice.Price : null,
-                                          BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                          AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                          AskDate = d.AskDate,
-                                          OrdName = d.OrdName,
-                                          OrdVersion = d.OrdVersion,
-                                          OrdDN = d.OrdDN,
-                                          OrdPN = d.OrdPN,
-                                          OrdLJ = d.OrdLJ,
-                                          OrdFG = d.OrdFG,
-                                          OrdFT = d.OrdFT,
-                                          OrdFNJ = d.OrdFNJ,
-                                          OrdTL = d.OrdTL,
-                                          OrdKV = d.OrdKV,
-                                          OrdFlow = d.OrdFlow,
-                                          OrdLeak = d.OrdLeak,
-                                          OrdQYDY = d.OrdQYDY,
-                                          Num = d.Num,
-                                          OrdUnit = d.OrdUnit,
-                                          IsPreProBind = d.IsPreProBind,
-                                          DocName = bill != null ? bill.DocName : null,
-                                          DocNameStatus = !string.IsNullOrWhiteSpace(bill != null ? bill.DocName : null) ? "已上传" : "未上传",
-                                          FileName = billFile != null ? billFile.FileName : null,
-                                          FileNameStatus = !string.IsNullOrWhiteSpace(billFile != null ? billFile.FileName : null) ? "已上传" : "未上传",
-                                          IsInvalid = 1,
-                                          Timeout = d.Timeout
-                                      };
+                var internalQueryFT = BuildDataFTInternalQuery();
+                var externalQueryFT = BuildDataFTExternalQuery();
 
-                var externalQueryFT = from d in _db.Set<Ask_DataFTOut>()
-                                      join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                      from supplier in supplierGroup.DefaultIfEmpty()
-                                      join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
-                                      from billPrice in priceGroup.DefaultIfEmpty()
-                                      join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                      from billFile in fileGroup.DefaultIfEmpty()
-                                      join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
-                                      from billDetail in detailGroup.DefaultIfEmpty()
-                                      join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
-                                      from bill in billGroup.DefaultIfEmpty()
-                                      select new Ask_DataFTDto
-                                      {
-                                          ID = d.ID,
-                                          BillID = billDetail != null ? billDetail.BillID : null,
-                                          AskProjName = d.AskProjName,
-                                          SuppName = supplier != null ? supplier.SuppName : "",
-                                          Price = billPrice != null ? billPrice.Price : null,
-                                          BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                          AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                          AskDate = d.AskDate,
-                                          OrdName = d.OrdName,
-                                          OrdVersion = d.OrdVersion,
-                                          OrdDN = d.OrdDN,
-                                          OrdPN = d.OrdPN,
-                                          OrdLJ = d.OrdLJ,
-                                          OrdFG = d.OrdFG,
-                                          OrdFT = d.OrdFT,
-                                          OrdFNJ = d.OrdFNJ,
-                                          OrdTL = d.OrdTL,
-                                          OrdKV = d.OrdKV,
-                                          OrdFlow = d.OrdFlow,
-                                          OrdLeak = d.OrdLeak,
-                                          OrdQYDY = d.OrdQYDY,
-                                          Num = d.Num,
-                                          OrdUnit = d.OrdUnit,
-                                          IsPreProBind = d.IsPreProBind,
-                                          DocName = bill != null ? bill.DocName : null,
-                                          DocNameStatus = !string.IsNullOrWhiteSpace(bill != null ? bill.DocName : null) ? "已上传" : "未上传",
-                                          FileName = billFile != null ? billFile.FileName : null,
-                                          FileNameStatus = !string.IsNullOrWhiteSpace(billFile != null ? billFile.FileName : null) ? "已上传" : "未上传",
-                                          IsInvalid = 0,
-                                          Timeout = d.Timeout
-                                      };
+                var query = ComposeView(internalQueryFT, externalQueryFT, qto.IsOutView);
 
-                IQueryable<Ask_DataFTDto> query;
-                if (qto.IsOutView == 1)
-                {
-                    query = internalQueryFT;
-                }
-                else if (qto.IsOutView == 0)
-                {
-                    query = externalQueryFT;
-                }
-                else
-                {
-                    query = internalQueryFT.Union(externalQueryFT);
-                }
-
-                if (qto.BillID.HasValue)
-                {
-                    query = query.Where(x => x.BillID == qto.BillID.Value);
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.AskProjName))
-                {
-                    query = query.Where(x => x.AskProjName.Contains(qto.AskProjName));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.SuppName))
-                {
-                    query = query.Where(x => x.SuppName.Contains(qto.SuppName));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.OrdVersion))
-                {
-                    query = query.Where(x => x.OrdVersion.Contains(qto.OrdVersion));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.OrdDN))
-                {
-                    query = query.Where(x => x.OrdDN.Contains(qto.OrdDN));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.OrdPN))
-                {
-                    query = query.Where(x => x.OrdPN.Contains(qto.OrdPN));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.OrdFT))
-                {
-                    query = query.Where(x => x.OrdFT.Contains(qto.OrdFT));
-                }
-
-                // 日期范围查询
-                if (qto.StartDate.HasValue)
-                {
-                    query = query.Where(x => x.AskDate >= qto.StartDate.Value);
-                }
-
-                if (qto.EndDate.HasValue)
-                {
-                    query = query.Where(x => x.AskDate <= qto.EndDate.Value);
-                }
-
-                // 价格状态过滤
-                if (qto.IsExpired.HasValue)
-                {
-                    if (qto.IsExpired.Value)
-                    {
-                        // 已过期：Timeout > 0
-                        query = query.Where(x => x.Timeout > 0);
-                    }
-                    else
-                    {
-                        // 未过期：Timeout <= 0
-                        query = query.Where(x => x.Timeout <= 0);
-                    }
-                }
-
-                // 排序
-                query = query.OrderByDescending(x => x.AskDate);
+                // 统一筛选与排序
+                query = ApplyFTFilters(query, qto);
+                query = ApplySorting(query);
 
                 // 分页
-                var pagedResult = await PaginationList<Ask_DataFTDto>.CreateAsync(qto.PageNumber, qto.PageSize, query);
+                var pagedResult = await PaginateAsync(qto.PageNumber, qto.PageSize, query);
 
-                foreach (var item in pagedResult)
-                {
-                    item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
-                    item.PriceStatusText = ZKLT25Profile.GetPriceStatusText(item.Timeout);
-                    item.AvailableActions = ZKLT25Profile.GetAvailableActions(item.Timeout);
-                }
+                // 统一装饰派生显示字段
+                DecorateFTList(pagedResult);
                 
                 return ResultModel<PaginationList<Ask_DataFTDto>>.Ok(pagedResult);
             }
@@ -1023,168 +1298,21 @@ namespace ZKLT25.API.Services
         {
             try
             {
-                var internalQueryFJ = from d in _db.Ask_DataFJ
-                                      join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID
-                                      join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID
-                                      join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                      from supplier in supplierGroup.DefaultIfEmpty()
-                                      join bp in (
-                                          from p in _db.Ask_BillPrice
-                                          group p by p.BillDetailID into g
-                                          select new { BillDetailID = g.Key, BasicsPrice = g.Max(x => x.BasicsPrice ?? 0), AddPrice = g.Max(x => x.AddPrice ?? 0) }
-                                      ) on d.BillDetailID equals bp.BillDetailID into priceGroup
-                                      from billPrice in priceGroup.DefaultIfEmpty()
-                                      join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                      from billFile in fileGroup.DefaultIfEmpty()
-                                      select new Ask_DataFJDto
-                                      {
-                                          ID = d.ID,
-                                          BillID = billDetail.BillID,
-                                          AskProjName = d.AskProjName,
-                                          SuppName = supplier != null ? supplier.SuppName : "",
-                                          Price = (double?)d.Price,
-                                          BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                          AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                          AskDate = d.AskDate,
-                                          OrdName = d.FJType,
-                                          FJVersion = d.FJVersion,
-                                          Num = d.Num,
-                                          Unit = d.Unit,
-                                          IsPreProBind = d.IsPreProBind,
-                                          DocName = bill.DocName,
-                                          FileName = billFile != null ? billFile.FileName : null,
-                                          Timeout = d.Timeout, 
-                                          DocNameStatus = !string.IsNullOrWhiteSpace(bill.DocName) ? "已上传" : "未上传",
-                                          FileNameStatus = !string.IsNullOrWhiteSpace(billFile != null ? billFile.FileName : null) ? "已上传" : "未上传",
-                                          IsInvalid = 1,
-                                          ProjDay = d.ProjDay,
-                                          Day1 = d.Day1,
-                                          Day2 = d.Day2,
-                                          Memo1 = d.Memo1,
-                                          BillIDText = billDetail.BillID.ToString()
-                                      };
+                var internalQueryFJ = BuildDataFJInternalQuery();
 
-                var externalQueryFJ = from d in _db.Ask_DataFJOut
-                                      join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID
-                                      join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID
-                                      join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                      from supplier in supplierGroup.DefaultIfEmpty()
-                                      join bp in (
-                                          from p in _db.Ask_BillPrice
-                                          group p by p.BillDetailID into g
-                                          select new { BillDetailID = g.Key, BasicsPrice = g.Max(x => x.BasicsPrice ?? 0), AddPrice = g.Max(x => x.AddPrice ?? 0) }
-                                      ) on d.BillDetailID equals bp.BillDetailID into priceGroup
-                                      from billPrice in priceGroup.DefaultIfEmpty()
-                                      join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                      from billFile in fileGroup.DefaultIfEmpty()
-                                      select new Ask_DataFJDto
-                                      {
-                                          ID = d.ID,
-                                          BillID = billDetail.BillID,
-                                          AskProjName = d.AskProjName,
-                                          SuppName = supplier != null ? supplier.SuppName : "",
-                                          Price = (double?)d.Price,
-                                          BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                          AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                          AskDate = d.AskDate,
-                                          OrdName = d.FJType,
-                                          FJVersion = d.FJVersion,
-                                          Num = d.Num,
-                                          Unit = d.Unit,
-                                          IsPreProBind = d.IsPreProBind,
-                                          DocName = bill.DocName,
-                                          FileName = billFile != null ? billFile.FileName : null,
-                                          Timeout = d.Timeout,
-                                          DocNameStatus = !string.IsNullOrWhiteSpace(bill.DocName) ? "已上传" : "未上传",
-                                          FileNameStatus = !string.IsNullOrWhiteSpace(billFile != null ? billFile.FileName : null) ? "已上传" : "未上传",
-                                          IsInvalid = 0,
-                                          ProjDay = d.ProjDay,
-                                          Day1 = d.Day1,
-                                          Day2 = d.Day2,
-                                          Memo1 = d.Memo1,
-                                          BillIDText = billDetail.BillID.ToString()
-                                      };
+                var externalQueryFJ = BuildDataFJExternalQuery();
 
-                IQueryable<Ask_DataFJDto> query;
-                if (qto.IsOutView == 1)
-                {
-                    query = internalQueryFJ;
-                }
-                else if (qto.IsOutView == 0)
-                {
-                    query = externalQueryFJ;
-                }
-                else
-                {
-                    query = internalQueryFJ.Union(externalQueryFJ);
-                }
+                var query = ComposeView(internalQueryFJ, externalQueryFJ, qto.IsOutView);
 
-                // 条件筛选
-                if (qto.BillID.HasValue)
-                {
-                    query = query.Where(x => x.BillID == qto.BillID.Value);
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.AskProjName))
-                {
-                    query = query.Where(x => x.AskProjName.Contains(qto.AskProjName));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.SuppName))
-                {
-                    query = query.Where(x => x.SuppName.Contains(qto.SuppName));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.OrdName))
-                {
-                    query = query.Where(x => x.OrdName.Contains(qto.OrdName)); 
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.FJVersion))
-                {
-                    query = query.Where(x => x.FJVersion.Contains(qto.FJVersion));
-                }
-
-                // 日期范围查询
-                if (qto.StartDate.HasValue)
-                {
-                    query = query.Where(x => x.AskDate >= qto.StartDate.Value);
-                }
-
-                if (qto.EndDate.HasValue)
-                {
-                    query = query.Where(x => x.AskDate <= qto.EndDate.Value);
-                }
-
-                // 价格状态过滤
-                if (qto.IsExpired.HasValue)
-                {
-                    if (qto.IsExpired.Value)
-                    {
-                        // 已过期：Timeout > 0
-                        query = query.Where(x => x.Timeout > 0);
-                    }
-                    else
-                    {
-                        // 未过期：Timeout <= 0
-                        query = query.Where(x => x.Timeout <= 0);
-                    }
-                }
-
-                // 排序
-                query = query.OrderByDescending(x => x.AskDate);
+                // 统一筛选与排序
+                query = ApplyFJFilters(query, qto);
+                query = ApplySorting(query);
 
                 // 分页
-                var pagedResult = await PaginationList<Ask_DataFJDto>.CreateAsync(qto.PageNumber, qto.PageSize, query);
+                var pagedResult = await PaginateAsync(qto.PageNumber, qto.PageSize, query);
                 
-                foreach (var item in pagedResult)
-                {
-                    item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
-                    item.PriceStatusText = ZKLT25Profile.GetPriceStatusText(item.Timeout);
-                    item.AvailableActions = ZKLT25Profile.GetAvailableActions(item.Timeout);
-                    item.DocNameStatus = string.IsNullOrWhiteSpace(item.DocName) ? "未上传" : "已上传";
-                    item.FileNameStatus = string.IsNullOrWhiteSpace(item.FileName) ? "未上传" : "已上传";
-                }
+                // 统一装饰派生显示字段
+                DecorateFJList(pagedResult);
                 
                 return ResultModel<PaginationList<Ask_DataFJDto>>.Ok(pagedResult);
             }
@@ -1452,26 +1580,12 @@ namespace ZKLT25.API.Services
                 }
 
                 // 批量更新
-                foreach (var item in dataFTList)
-                {
-                    item.Timeout = timeout;
-                    item.IsPreProBind = isPreProBind;
-                }
-                foreach (var item in dataFTOutList)
-                {
-                    item.Timeout = timeout;
-                    item.IsPreProBind = isPreProBind;
-                }
-                foreach (var item in dataFJList)
-                {
-                    item.Timeout = timeout;
-                    item.IsPreProBind = isPreProBind;
-                }
-                foreach (var item in dataFJOutList)
-                {
-                    item.Timeout = timeout;
-                    item.IsPreProBind = isPreProBind;
-                }
+                SetTimeoutAndBind(dataFTList, timeout, isPreProBind);
+                SetTimeoutAndBind(dataFTOutList, timeout, isPreProBind);
+                SetTimeoutAndBind(dataFJList, timeout, isPreProBind);
+                SetTimeoutAndBind(dataFJOutList, timeout, isPreProBind);
+
+                
 
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();

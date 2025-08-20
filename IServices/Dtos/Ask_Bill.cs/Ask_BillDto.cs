@@ -3,7 +3,7 @@ namespace ZKLT25.API.IServices.Dtos
     public class Ask_BillDto
     {
         /// <summary>
-        /// 账单ID
+        /// ID
         /// </summary>
         public int BillID { get; set; }
 
@@ -23,12 +23,12 @@ namespace ZKLT25.API.IServices.Dtos
         public string? KUser { get; set; }
 
         /// <summary>
-        /// 账单状态
+        /// 状态
         /// </summary>
         public int? BillState { get; set; }
 
         /// <summary>
-        /// 账单状态显示文本
+        /// 状态显示文本
         /// </summary>
         public string BillStateText { get; set; } = "";
 
