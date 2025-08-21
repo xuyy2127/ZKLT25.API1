@@ -207,6 +207,13 @@ namespace ZKLT25.API.IServices
         /// <param name="qto">查询条件</param>
         /// <returns>Excel 文件字节数组</returns>
         Task<byte[]> DataFJExcelAsync(Ask_DataFJQto qto);
+
+        /// <summary>
+        /// 导出阀体询价数据为 Excel 文件
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns>Excel 文件字节数组</returns>
+        Task<byte[]> DataFTExcelAsync(Ask_DataFTQto qto);
         #endregion
 
         #region 价格备注录入/关闭项目接口

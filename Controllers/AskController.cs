@@ -351,7 +351,7 @@ namespace ZKLT25.API.Controllers
         }
         #endregion
 
-        #region 导出
+        #region 导出阀体附件价格文件
         /// <summary>
         /// 导出附件询价数据为 Excel 文件
         /// </summary>
@@ -367,6 +367,28 @@ namespace ZKLT25.API.Controllers
                 
                 return File(excelBytes, 
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                    fileName);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"导出失败：{ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// 导出阀体询价数据为 Excel 文件
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns>Excel 文件下载</returns>
+        [HttpPost("DataFTExcelList")]
+        public async Task<IActionResult> DataFTExcelListAsync([FromBody] Ask_DataFTQto qto)
+        {
+            try
+            {
+                var excelBytes = await _service.DataFTExcelAsync(qto);
+                var fileName = $"阀体询价数据_{DateTime.Now:yyyyMMddHHmm}.xlsx";
+                return File(excelBytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     fileName);
             }
             catch (Exception ex)

@@ -1,6 +1,6 @@
 ﻿namespace ZKLT25.API.IServices.Dtos
 {
-    public class Ask_DataFTDto
+    public class Ask_DataFTDto : IDataItemDto
     {
         /// <summary>
         /// 主键ID
@@ -19,6 +19,10 @@
         /// 供应商名称（spplier
         /// </summary>
         public string SuppName { get; set; }
+        /// <summary>
+        /// 供应商ID
+        /// </summary>
+        public int? SuppID { get; set; }
         /// <summary>
         /// 单价（billprice
         /// </summary>
@@ -143,5 +147,30 @@
         /// 超时状态（用于计算价格状态和可用操作）
         /// </summary>
         public int? Timeout { get; set; }
+
+        /// <summary>
+        /// 项目交期(天)
+        /// </summary>
+        public string? ProjDay { get; set; }
+
+        /// <summary>
+        /// 小于10台标准交期(天)
+        /// </summary>
+        public string? Day1 { get; set; }
+
+        /// <summary>
+        /// 10台至20台标准交期(天)
+        /// </summary>
+        public string? Day2 { get; set; }
+
+        /// <summary>
+        /// 备注1
+        /// </summary>
+        public string? Memo1 { get; set; }
+
+        /// <summary>
+        /// 单据编号文本
+        /// </summary>
+        public string? BillIDText { get; set; }
     }
 }

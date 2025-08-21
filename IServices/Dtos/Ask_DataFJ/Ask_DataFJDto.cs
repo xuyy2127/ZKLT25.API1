@@ -3,7 +3,7 @@ namespace ZKLT25.API.IServices.Dtos
     /// <summary>
     /// 附件报价查询分页
     /// </summary>
-    public class Ask_DataFJDto
+    public class Ask_DataFJDto : IDataItemDto
     {
         /// <summary>
         /// 主键ID
@@ -26,6 +26,11 @@ namespace ZKLT25.API.IServices.Dtos
         public string SuppName { get; set; }
 
         /// <summary>
+        /// 供应商ID
+        /// </summary>
+        public int? SuppID { get; set; }
+
+        /// <summary>
         /// 价格（bill price）
         /// </summary>
         public double? Price { get; set; }
@@ -46,9 +51,14 @@ namespace ZKLT25.API.IServices.Dtos
         public DateTime? AskDate { get; set; }
 
         /// <summary>
-        /// 订单名称
+        /// 附件名称
         /// </summary>
-        public string? OrdName { get; set; }
+        public string? FJType { get; set; }
+        
+        /// <summary>
+        /// 附件名称ID（FJTypeId）
+        /// </summary>
+        public int? FJTypeId { get; set; }
 
         /// <summary>
         /// 附件型号
@@ -131,12 +141,12 @@ namespace ZKLT25.API.IServices.Dtos
         public string? Memo1 { get; set; }
 
         /// <summary>
-        /// 单据编号（字符串格式用于展示）
+        /// 单据编号
         /// </summary>
         public string? BillIDText { get; set; }
 
         /// <summary>
-        /// 超时状态（用于计算价格状态和可用操作）
+        /// 超时状态
         /// </summary>
         public int? Timeout { get; set; }
     }

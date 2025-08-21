@@ -18,14 +18,23 @@ namespace ZKLT25.API.IServices.Dtos
         /// 供应商名称
         /// </summary>
         public string? SuppName { get; set; }
-
         /// <summary>
-        /// 附件类型
+        /// 供应商ID
         /// </summary>
-        public string? OrdName { get; set; }
+        public int? SuppID { get; set; }
 
         /// <summary>
-        /// 型号
+        /// 附件名称
+        /// </summary>
+        public string? FJType { get; set; }
+        
+        /// <summary>
+        /// 附件（FJTypeId）
+        /// </summary>
+        public int? FJTypeId { get; set; }
+
+        /// <summary>
+        /// 附件型号
         /// </summary>
         public string? FJVersion { get; set; }
         
@@ -38,11 +47,6 @@ namespace ZKLT25.API.IServices.Dtos
         /// 查询结束日期
         /// </summary>
         public DateTime? EndDate { get; set; }
-        
-        /// <summary>
-        /// 数据源选择（-1=全部表，0=外部表，1=内部表）
-        /// </summary>
-        public int IsOutView { get; set; } = 1;
         
         /// <summary>
         /// 价格状态过滤（null=全部，true=已过期，false=未过期）

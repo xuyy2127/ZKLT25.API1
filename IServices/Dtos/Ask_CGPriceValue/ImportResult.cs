@@ -21,7 +21,7 @@ namespace ZKLT25.API.IServices.Dtos
     public class ImportError
     {
         /// <summary>
-        /// 行号（从1开始）
+        /// 行号
         /// </summary>
         public int RowNumber { get; set; }
         

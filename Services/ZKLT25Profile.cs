@@ -189,7 +189,7 @@ namespace ZKLT25.API.Services
         /// </summary>
         public static string GetPriceStatusText(int? timeout)
         {
-            return (timeout.HasValue && timeout.Value > 0) ? "已过期" : "未过期";
+            return (timeout.HasValue && timeout.Value > 0) ? "已过期" : "有效";
         }
 
         /// <summary>
