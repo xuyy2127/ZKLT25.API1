@@ -58,7 +58,7 @@ namespace ZKLT25.API.Models
         public string? DoUser { get; set; }
         
         /// <summary>
-        /// 预算日期
+        /// 预计回复日期
         /// </summary>
         public DateTime? YSDate { get; set; }
         

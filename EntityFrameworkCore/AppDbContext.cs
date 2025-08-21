@@ -21,15 +21,18 @@ namespace ZKLT25.API.EntityFrameworkCore
         public DbSet<Ask_SuppRangeFT> Ask_SuppRangeFT { get; set; }
         public DbSet<Ask_SuppRangeFJ> Ask_SuppRangeFJ { get; set; }
         public DbSet<Ask_Bill> Ask_Bill { get; set; }
+        public DbSet<AskDay_Bill> AskDay_Bill { get; set; }
         public DbSet<Ask_DataFT> Ask_DataFT { get; set; }
         public DbSet<Ask_DataFTOut> Ask_DataFTOut { get; set; }
         public DbSet<Ask_DataFJ> Ask_DataFJ { get; set; }
         public DbSet<Ask_DataFJOut> Ask_DataFJOut { get; set; }
         public DbSet<Ask_BillFile> Ask_BillFile { get; set; }
+        public DbSet<Ask_BillFileLog> Ask_BillFileLog { get; set; }
         public DbSet<Ask_BillDetail> Ask_BillDetail { get; set; }
         public DbSet<Ask_BillPrice> Ask_BillPrice { get; set; }
         public DbSet<Ask_BillLog> Ask_BillLog { get; set; }
         public DbSet<Price_Bill> Price_Bill { get; set; }
+        public DbSet<Ask_CGPriceValue> Ask_CGPriceValue { get; set; }
 
         [DbFunction(Name = "func_TransState", Schema = "dbo")]
         public static string func_TransState(string state)

@@ -44,6 +44,12 @@ namespace ZKLT25.API.Services
             // Ask_DataFJ 和 Ask_DataFJOut 共享映射配置
             CreateDataFJMapping<Ask_DataFJ>();
             CreateDataFJMapping<Ask_DataFJOut>();
+
+            // Ask_CGPriceValue 映射配置
+            CreateMap<Ask_CGPriceValue, Ask_CGPriceValueDto>()
+                .ForMember(dest => dest.IsValid, opt => opt.MapFrom(src => src.ExpireTime == null || src.ExpireTime > DateTime.Now));
+            CreateMap<Ask_CGPriceValueCto, Ask_CGPriceValue>();
+            CreateMap<Ask_CGPriceValueUto, Ask_CGPriceValue>();
         }
 
         /// <summary>

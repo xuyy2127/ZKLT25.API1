@@ -21,7 +21,12 @@ namespace ZKLT25.API.IServices.Dtos
         /// 开票用户
         /// </summary>
         public string? KUser { get; set; }
-
+        
+        /// <summary>
+        /// 预计回复时间
+        /// </summary>
+        public DateTime? YSDate { get; set; }
+        
         /// <summary>
         /// 状态
         /// </summary>
@@ -41,5 +46,10 @@ namespace ZKLT25.API.IServices.Dtos
         /// 客户名称
         /// </summary>
         public string? Customer { get; set; }
+        
+        /// <summary>
+        /// 交期编号（来自AskDay_Bill.BillID）
+        /// </summary>
+        public int? DeliveryBillID { get; set; }
     }
 }

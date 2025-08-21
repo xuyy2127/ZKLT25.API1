@@ -385,7 +385,7 @@ namespace ZKLT25.API.Controllers
         [HttpPost("SetPriceRemark")]
         [Consumes("multipart/form-data")]
         [Produces("application/json")]
-        public async Task<ResultModel<int>> SetPriceRemarkAsync([FromBody] BillPriceCto cto)
+        public async Task<ResultModel<int>> SetPriceRemarkAsync([FromForm] BillPriceCto cto)
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
             return await _service.SetPriceRemarkAsync(cto, currentUser);
@@ -398,10 +398,97 @@ namespace ZKLT25.API.Controllers
         [HttpPost("CloseProject")]
         [Consumes("application/json")]
         [Produces("application/json")]
-        public async Task<ResultModel<int>> CloseProjectAsync([FromBody] List<int> billDetailIds)
+        public async Task<ResultModel<int>> CloseProjectAsync([FromBody] int billId)
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            return await _service.CloseProjectAsync(billDetailIds, currentUser);
+            return await _service.CloseProjectAsync(billId, currentUser);
+        }
+
+        #endregion
+
+        #region 采购成本维护
+
+        /// <summary>
+        /// 分页查询采购成本列表
+        /// </summary>
+        /// <param name="qto">查询参数</param>
+        /// <returns></returns>
+        [HttpGet("GetCGPagedList")]
+        public async Task<ResultModel<PaginationList<Ask_CGPriceValueDto>>> GetCGPagedListAsync([FromQuery] Ask_CGPriceValueQto qto)
+        {
+            var res = await _service.GetCGPagedListAsync(qto);
+            if (res.Data != null)
+                Response.Headers.Append("TotalCount", res.Data.TotalCount.ToString());
+            return res;
+        }
+
+        /// <summary>
+        /// 新增采购成本记录
+        /// </summary>
+        /// <param name="cto">创建参数</param>
+        /// <returns></returns>
+        [HttpPost("CreateCG")]
+        public async Task<ResultModel<bool>> CreateCGAsync([FromBody] Ask_CGPriceValueCto cto)
+        {
+            return await _service.CreateCGAsync(cto);
+        }
+
+        /// <summary>
+        /// 删除采购成本记录
+        /// </summary>
+        /// <param name="id">主键ID</param>
+        /// <returns></returns>
+        [HttpDelete("DeleteCG/{id}")]
+        public async Task<ResultModel<bool>> DeleteCGAsync(int id)
+        {
+            return await _service.DeleteCGAsync(id);
+        }
+
+        /// <summary>
+        /// 更新采购成本记录
+        /// </summary>
+        /// <param name="id">主键ID</param>
+        /// <param name="uto">更新参数</param>
+        /// <returns></returns>
+        [HttpPut("UpdateCG/{id}")]
+        public async Task<ResultModel<bool>> UpdateCGAsync(int id, [FromBody] Ask_CGPriceValueUto uto)
+        {
+            return await _service.UpdateCGAsync(id, uto);
+        }
+
+        /// <summary>
+        /// 导出采购成本数据为Excel
+        /// </summary>
+        /// <param name="qto">查询参数</param>
+        /// <returns></returns>
+        [HttpPost("ExportCGExcel")]
+        public async Task<IActionResult> ExportCGExcelAsync([FromBody] Ask_CGPriceValueQto qto)
+        {
+            try
+            {
+                var excelBytes = await _service.ExportCGExcelAsync(qto);
+                var fileName = $"采购成本库数据_{DateTime.Now:yyyyMMddHHmm}.xlsx";
+                
+                return File(excelBytes, 
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                    fileName);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"导出失败：{ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// 导入采购成本数据Excel
+        /// </summary>
+        /// <param name="file">Excel文件</param>
+        /// <param name="isReplace">是否全量替换</param>
+        /// <returns></returns>
+        [HttpPost("ImportCGExcel")]
+        public async Task<ResultModel<ImportResult>> ImportCGExcelAsync(IFormFile file, [FromQuery] bool isReplace = false)
+        {
+            return await _service.ImportCGExcelAsync(file, isReplace);
         }
 
         #endregion

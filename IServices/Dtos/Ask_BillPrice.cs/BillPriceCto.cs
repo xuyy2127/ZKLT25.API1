@@ -64,5 +64,10 @@ namespace ZKLT25.API.IServices.Dtos
         /// </summary>
         [Range(0, 1, ErrorMessage = "绑定项目值必须为0或1")]
         public int? IsPreProBind { get; set; } = 0;
+        
+        /// <summary>
+        /// 上传的报价文件
+        /// </summary>
+        public IFormFile? QuoteFile { get; set; }
     }
 }

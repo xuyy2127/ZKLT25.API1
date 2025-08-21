@@ -200,9 +200,7 @@ namespace ZKLT25.API.IServices
         /// <param name="entityType">实体类型：DataFT 或 DataFJ</param>
         /// <returns></returns>
         Task<ResultModel<bool>> SetPriceStatusAsync(List<int> ids, string action, int? extendDays, string? currentUser, string entityType);
-        #endregion
 
-        #region 导出
         /// <summary>
         /// 导出附件询价数据为 Excel 文件
         /// </summary>
@@ -211,7 +209,7 @@ namespace ZKLT25.API.IServices
         Task<byte[]> DataFJExcelAsync(Ask_DataFJQto qto);
         #endregion
 
-        #region 价格备注录入接口
+        #region 价格备注录入/关闭项目接口
 
         /// <summary>
         /// 录入价格备注
@@ -224,11 +222,56 @@ namespace ZKLT25.API.IServices
         /// <summary>
         /// 关闭项目
         /// </summary>
-        /// <param name="billDetailIds">要关闭的明细ID列表</param>
+        /// <param name="billId">项目ID</param>
         /// <param name="currentUser">当前用户</param>
         /// <returns>操作结果</returns>
-        Task<ResultModel<int>> CloseProjectAsync(List<int> billDetailIds, string? currentUser);
+        Task<ResultModel<int>> CloseProjectAsync(int billId, string? currentUser);
 
+        #endregion
+
+        #region 采购成本维护
+        /// <summary>
+        /// 分页查询采购成本列表
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns></returns>
+        Task<ResultModel<PaginationList<Ask_CGPriceValueDto>>> GetCGPagedListAsync(Ask_CGPriceValueQto qto);
+
+        /// <summary>
+        /// 创建采购成本记录
+        /// </summary>
+        /// <param name="cto">创建请求</param>
+        /// <returns></returns>
+        Task<ResultModel<bool>> CreateCGAsync(Ask_CGPriceValueCto cto);
+
+        /// <summary>
+        /// 删除采购成本记录
+        /// </summary>
+        /// <param name="id">主键ID</param>
+        /// <returns></returns>
+        Task<ResultModel<bool>> DeleteCGAsync(int id);
+
+        /// <summary>
+        /// 更新采购成本记录
+        /// </summary>
+        /// <param name="id">主键ID</param>
+        /// <param name="uto">更新请求</param>
+        /// <returns></returns>
+        Task<ResultModel<bool>> UpdateCGAsync(int id, Ask_CGPriceValueUto uto);
+
+        /// <summary>
+        /// 导出采购成本数据为Excel文件
+        /// </summary>
+        /// <param name="qto">查询条件</param>
+        /// <returns></returns>
+        Task<byte[]> ExportCGExcelAsync(Ask_CGPriceValueQto qto);
+
+        /// <summary>
+        /// 导入采购成本数据Excel文件
+        /// </summary>
+        /// <param name="file">Excel文件</param>
+        /// <returns></returns>
+        Task<ResultModel<ImportResult>> ImportCGExcelAsync(IFormFile file, bool isReplace = false);
         #endregion
 
     }

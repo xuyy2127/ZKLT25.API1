@@ -24,7 +24,7 @@ namespace ZKLT25.API.Services
         }
 
 
-
+        #region 日志记录
         /// <summary>
         /// 记录修改日志
         /// </summary>
@@ -498,6 +498,7 @@ namespace ZKLT25.API.Services
                 item.IsPreProBind = isPreProBind;
             }
         }
+        #endregion
 
         #region 阀体型号维护
         /// <summary>
@@ -1132,7 +1133,9 @@ namespace ZKLT25.API.Services
                 var query = from bill in _db.Ask_Bill
                            join priceBill in _db.Price_Bill on bill.BillID equals priceBill.BillID into priceBills
                            from priceBill in priceBills.DefaultIfEmpty()
-                           select new { bill, priceBill };
+                           join deliveryBill in _db.AskDay_Bill on bill.BillID equals deliveryBill.PriceBillID into deliveryBills
+                           from deliveryBill in deliveryBills.DefaultIfEmpty()
+                           select new { bill, priceBill, deliveryBill };
 
                 // 关键字搜索：单据编号/项目名称/客户名称/发起人
                 if (!string.IsNullOrWhiteSpace(qto.Keyword))
@@ -1166,7 +1169,9 @@ namespace ZKLT25.API.Services
                     KUser = x.bill.KUser,
                     BillState = x.bill.BillState,
                     KDate = x.bill.KDate,
-                    Customer = x.priceBill.Customer
+                    YSDate = x.bill.YSDate,
+                    Customer = x.priceBill.Customer,
+                    DeliveryBillID = x.deliveryBill.BillID
                 });
 
                 var result = await PaginationList<Ask_BillDto>.CreateAsync(qto.PageNumber, qto.PageSize, projectedQuery);
@@ -1397,9 +1402,8 @@ namespace ZKLT25.API.Services
         /// </summary>
         public async Task<byte[]> DataFJExcelAsync(Ask_DataFJQto qto)
         {
-            try
-            {
-                var result = await GetDataFJPagedListAsync(new Ask_DataFJQto
+            return await ExportDataToExcelAsync(
+                async () => await GetDataFJPagedListAsync(new Ask_DataFJQto
                 {
                     BillID = qto.BillID,
                     AskProjName = qto.AskProjName,
@@ -1412,68 +1416,31 @@ namespace ZKLT25.API.Services
                     IsExpired = qto.IsExpired,
                     PageSize = 999999, // 取全量数据
                     PageNumber = 1
-                });
-
-                if (!result.Success || result.Data == null)
-                {
-                    throw new Exception(result.Message ?? "获取数据失败");
-                }
-
-                var exportData = result.Data;
-
-                var workbook = new Workbook();
-                var worksheet = workbook.Worksheets[0];
-                worksheet.Name = "附件询价数据";
-
-                var headers = new[] {
+                }),
+                "附件询价数据",
+                new[] {
                     "询价日期", "单据编号", "项目名称", "物品名称", "物品型号", "单位", "数量",
                     "成本价", "供应商名称", "项目交期(天)", "小于10台标准交期(天)", "10台至20台标准交期(天)",
                     "备注1", "报价文件", "明细表"
-                };
-
-                for (int i = 0; i < headers.Length; i++)
-                {
-                    var cell = worksheet.Cells[0, i];
-                    cell.Value = headers[i];
-                    var style = cell.GetStyle();
-                    style.Font.IsBold = true;
-                    style.HorizontalAlignment = TextAlignmentType.Center;
-                    cell.SetStyle(style);
+                },
+                (data) => new object[] {
+                    data.AskDate?.ToString("yyyy-MM-dd") ?? "",
+                    data.BillIDText ?? "",
+                    data.AskProjName ?? "",
+                    data.OrdName ?? "",
+                    data.FJVersion ?? "",
+                    data.Unit ?? "",
+                    data.Num?.ToString() ?? "",
+                    data.Price?.ToString("F2") ?? "",
+                    data.SuppName ?? "",
+                    data.ProjDay ?? "",
+                    data.Day1 ?? "",
+                    data.Day2 ?? "",
+                    data.Memo1 ?? "",
+                    data.FileNameStatus,
+                    data.DocNameStatus
                 }
-
-                for (int row = 0; row < exportData.Count; row++)
-                {
-                    var data = exportData[row];
-                    worksheet.Cells[row + 1, 0].Value = data.AskDate?.ToString("yyyy-MM-dd") ?? "";
-                    worksheet.Cells[row + 1, 1].Value = data.BillIDText ?? "";
-                    worksheet.Cells[row + 1, 2].Value = data.AskProjName ?? "";
-                    worksheet.Cells[row + 1, 3].Value = data.OrdName ?? "";
-                    worksheet.Cells[row + 1, 4].Value = data.FJVersion ?? "";
-                    worksheet.Cells[row + 1, 5].Value = data.Unit ?? "";
-                    worksheet.Cells[row + 1, 6].Value = data.Num?.ToString() ?? "";
-                    worksheet.Cells[row + 1, 7].Value = data.Price?.ToString("F2") ?? "";
-                    worksheet.Cells[row + 1, 8].Value = data.SuppName ?? "";
-                    worksheet.Cells[row + 1, 9].Value = data.ProjDay ?? "";
-                    worksheet.Cells[row + 1, 10].Value = data.Day1 ?? "";
-                    worksheet.Cells[row + 1, 11].Value = data.Day2 ?? "";
-                    worksheet.Cells[row + 1, 12].Value = data.Memo1 ?? "";
-                    worksheet.Cells[row + 1, 13].Value = data.FileNameStatus;
-                    worksheet.Cells[row + 1, 14].Value = data.DocNameStatus;
-                }
-
-                for (int i = 0; i < Math.Min(headers.Length, 8); i++)
-                {
-                    worksheet.AutoFitColumn(i);
-                }
-
-                using var stream = new MemoryStream();
-                workbook.Save(stream, SaveFormat.Xlsx);
-                return stream.ToArray();
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"导出失败：{ex.Message}", ex);
-            }
+            );
         }
 
         #endregion
@@ -1585,7 +1552,11 @@ namespace ZKLT25.API.Services
                 SetTimeoutAndBind(dataFJList, timeout, isPreProBind);
                 SetTimeoutAndBind(dataFJOutList, timeout, isPreProBind);
 
-                
+                // 处理报价文件上传
+                if (cto.QuoteFile != null && cto.BillDetailIDs.Any())
+                {
+                    await UploadQuoteFileAsync(cto.QuoteFile, cto.BillDetailIDs.First(), currentUser);
+                }
 
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -1600,24 +1571,32 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 关闭项目（将状态从发起0改为已关闭-1）
+        /// 关闭项目（将项目状态从发起0改为已关闭-1）
         /// </summary>
-        /// <param name="billDetailIds">要关闭的明细ID列表</param>
+        /// <param name="billId">项目ID</param>
         /// <param name="currentUser">当前用户</param>
         /// <returns>操作结果</returns>
-        public async Task<ResultModel<int>> CloseProjectAsync(List<int> billDetailIds, string? currentUser)
+        public async Task<ResultModel<int>> CloseProjectAsync(int billId, string? currentUser)
         {
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                var targetDetails = await _db.Ask_BillDetail
-                    .Where(x => billDetailIds.Contains(x.ID) && x.State == 0)
+                // 更新Ask_Bill状态
+                var bill = await _db.Ask_Bill
+                    .FirstOrDefaultAsync(x => x.BillID == billId && x.BillState == 0);
+
+                bill.BillState = -1;
+
+                // 更新关联的Ask_BillDetail状态
+                var billDetails = await _db.Ask_BillDetail
+                    .Where(x => x.BillID == billId && x.State == 0)
                     .ToListAsync();
 
-                foreach (var detail in targetDetails)
+                foreach (var detail in billDetails)
                 {
                     detail.State = -1; 
                     
+                    // 记录明细状态变更日志
                     var billLog = new Ask_BillLog
                     {
                         BillDetailID = detail.ID,
@@ -1628,10 +1607,20 @@ namespace ZKLT25.API.Services
                     _db.Ask_BillLog.Add(billLog);
                 }
 
+                // 更新关联的AskDay_Bill状态
+                var dayBills = await _db.AskDay_Bill
+                    .Where(x => x.BillID == billId && x.BillState == 0)
+                    .ToListAsync();
+
+                foreach (var dayBill in dayBills)
+                {
+                    dayBill.BillState = -1;
+                }
+
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                return ResultModel<int>.Ok(targetDetails.Count);
+                return ResultModel<int>.Ok(billDetails.Count + dayBills.Count);
             }
             catch (Exception ex)
             {
@@ -1640,9 +1629,559 @@ namespace ZKLT25.API.Services
             }
         }
 
+        /// <summary>
+        /// 上传报价文件
+        /// </summary>
+        /// <param name="file">上传的文件</param>
+        /// <param name="billDetailId">明细ID</param>
+        /// <param name="currentUser">当前用户</param>
+        private async Task UploadQuoteFileAsync(IFormFile file, int billDetailId, string? currentUser)
+        {
+            var fileName = file.FileName;
+            var existingFile = await _db.Ask_BillFile
+                .FirstOrDefaultAsync(x => x.BillDetailID == billDetailId);
+
+            if (existingFile != null)
+            {
+                // 更新现有记录
+                existingFile.FileName = fileName;
+            }
+            else
+            {
+                // 创建新记录
+                var billFile = new Ask_BillFile
+                {
+                    BillDetailID = billDetailId,
+                    FileName = fileName,
+                    State = 1
+                };
+                _db.Ask_BillFile.Add(billFile);
+            }
+
+            // 写入文件上传日志
+            var fileLog = new Ask_BillFileLog
+            {
+                BillDetailID = billDetailId,
+                FileName = fileName,
+                CreationDate = DateTime.Now,
+                CreationPreson = currentUser
+            };
+            _db.Ask_BillFileLog.Add(fileLog);
+        }
+
 
         #endregion
 
+        #region 采购成本维护
+        /// <summary>
+        /// 分页查询采购成本列表
+        /// </summary>
+        public async Task<ResultModel<PaginationList<Ask_CGPriceValueDto>>> GetCGPagedListAsync(Ask_CGPriceValueQto qto)
+        {
+            try
+            {
+                var query = _db.Ask_CGPriceValue.AsQueryable();
 
+                // 搜索关键字过滤
+                if (!string.IsNullOrWhiteSpace(qto.Version))
+                {
+                    query = query.Where(x => x.Version != null && x.Version.Contains(qto.Version));
+                }
+
+                if (!string.IsNullOrWhiteSpace(qto.Name))
+                {
+                    query = query.Where(x => x.Name != null && x.Name.Contains(qto.Name));
+                }
+
+                if (!string.IsNullOrWhiteSpace(qto.Type))
+                {
+                    query = query.Where(x => x.Type != null && x.Type.Contains(qto.Type));
+                }
+
+                if (!string.IsNullOrWhiteSpace(qto.Customer))
+                {
+                    query = query.Where(x => x.Customer != null && x.Customer.Contains(qto.Customer));
+                }
+
+                // 有效性筛选
+                if (qto.IsValid.HasValue && qto.IsValid.Value)
+                {
+                    var currentDate = DateTime.Now;
+                    query = query.Where(x => x.ExpireTime == null || x.ExpireTime > currentDate);
+                }
+                // 当 IsValid = null 时显示全部数据
+
+                // 排序
+                query = query.OrderBy(x => x.Id);
+
+                // 分页
+                var result = await PaginationList<Ask_CGPriceValueDto>.CreateAsync(qto.PageNumber, qto.PageSize, query.ProjectTo<Ask_CGPriceValueDto>(_mapper.ConfigurationProvider));
+                return ResultModel<PaginationList<Ask_CGPriceValueDto>>.Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<PaginationList<Ask_CGPriceValueDto>>.Error($"查询失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 创建采购成本记录
+        /// </summary>
+        public async Task<ResultModel<bool>> CreateCGAsync(Ask_CGPriceValueCto cto)
+        {
+            try
+            {
+                var entity = _mapper.Map<Ask_CGPriceValue>(cto);
+                
+                // 如果没有设置有效期，默认3650天
+                if (!entity.ExpireTime.HasValue)
+                {
+                    entity.ExpireTime = DateTime.Now.AddDays(3650);
+                }
+
+                // 验证字段填写规则
+                var validationResult = ValidateCGFields(entity.Type, entity.DN, entity.PN, entity.ordQY);
+                if (!validationResult.Success)
+                {
+                    return validationResult;
+                }
+
+                _db.Ask_CGPriceValue.Add(entity);
+                await _db.SaveChangesAsync();
+
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<bool>.Error($"创建失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 删除采购成本记录
+        /// </summary>
+        public async Task<ResultModel<bool>> DeleteCGAsync(int id)
+        {
+            try
+            {
+                var entity = await _db.Ask_CGPriceValue.FindAsync(id);
+                _db.Ask_CGPriceValue.Remove(entity);
+                await _db.SaveChangesAsync();
+
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<bool>.Error($"删除失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 更新采购成本记录
+        /// </summary>
+        public async Task<ResultModel<bool>> UpdateCGAsync(int id, Ask_CGPriceValueUto uto)
+        {
+            try
+            {
+                var entity = await _db.Ask_CGPriceValue.FindAsync(id);
+                if (entity == null)
+                {
+                    return ResultModel<bool>.Error("记录不存在");
+                }
+
+                // 验证字段填写规则
+                var validationResult = ValidateCGFields(entity.Type, uto.DN, uto.PN, uto.ordQY);
+                if (!validationResult.Success)
+                {
+                    return validationResult;
+                }
+
+                // 更新字段
+                entity.Price = uto.Price;
+                entity.AddPrice = uto.AddPrice ?? 0;
+                entity.DN = uto.DN;
+                entity.PN = uto.PN;
+                entity.ordQY = uto.ordQY;
+                entity.ExpireTime = uto.ExpireTime;
+                entity.PriceMemo = uto.PriceMemo;
+                entity.Customer = uto.Customer;
+                entity.SuppId = uto.SuppId;
+
+                await _db.SaveChangesAsync();
+
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<bool>.Error($"更新失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 验证采购成本字段填写规则
+        /// </summary>
+        /// <param name="type">类型</param>
+        /// <param name="dn">口径</param>
+        /// <param name="pn">压力</param>
+        /// <param name="ordQY">气源压力</param>
+        /// <returns>验证结果</returns>
+        private ResultModel<bool> ValidateCGFields(string? type, string? dn, string? pn, string? ordQY)
+        {
+            if (type == "执行机构")
+            {
+                // 执行机构类型：气源压力可以填写
+                if (!string.IsNullOrWhiteSpace(dn) || !string.IsNullOrWhiteSpace(pn))
+                {
+                    return ResultModel<bool>.Error("字段验证失败");
+                }
+            }
+            else if (type == "配对法兰及螺栓螺母")
+            {
+                // 配对法兰及螺栓螺母类型：DN和PN可以填写
+                if (!string.IsNullOrWhiteSpace(ordQY))
+                {
+                    return ResultModel<bool>.Error("字段验证失败");
+                }
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(dn) || !string.IsNullOrWhiteSpace(pn) || !string.IsNullOrWhiteSpace(ordQY))
+                {
+                    return ResultModel<bool>.Error("字段验证失败");
+                }
+            }
+
+            return ResultModel<bool>.Ok(true);
+        }
+
+        /// <summary>
+        /// 导出采购成本数据为Excel文件
+        /// </summary>
+        public async Task<byte[]> ExportCGExcelAsync(Ask_CGPriceValueQto qto)
+        {
+            return await ExportDataToExcelAsync(
+                async () => await GetCGPagedListAsync(new Ask_CGPriceValueQto
+                {
+                    Version = qto.Version,
+                    Name = qto.Name,
+                    Type = qto.Type,
+                    Customer = qto.Customer,
+                    IsValid = qto.IsValid,
+                    PageSize = 999999, // 取全量数据
+                    PageNumber = 1
+                }),
+                "采购成本库数据",
+                new[] {
+                    "型号", "类型", "口径", "压力", "气源压力", "基础价格", "加价", "截止日期", "备注", "客户"
+                },
+                (data) => new object[] {
+                    data.Version ?? "",
+                    data.Type ?? "",
+                    data.DN ?? "",
+                    data.PN ?? "",
+                    data.ordQY ?? "",
+                    data.Price?.ToString("F2") ?? "",
+                    data.AddPrice?.ToString("F2") ?? "",
+                    data.ExpireTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
+                    data.PriceMemo ?? "",
+                    data.Customer ?? ""
+                }
+            );
+        }
+
+
+        /// <summary>
+        /// 导入采购成本数据Excel文件
+        /// </summary>
+        public async Task<ResultModel<ImportResult>> ImportCGExcelAsync(IFormFile file, bool isReplace = false)
+        {
+            return await ImportExcelDataAsync(
+                file,
+                isReplace,
+                "采购成本库数据",
+                (worksheet, row, errors) =>
+                {
+                    // 读取Excel行数据
+                    var version = worksheet.Cells[row, 0].Value?.ToString()?.Trim();
+                    var type = worksheet.Cells[row, 1].Value?.ToString()?.Trim();
+                    var dn = worksheet.Cells[row, 2].Value?.ToString()?.Trim();
+                    var pn = worksheet.Cells[row, 3].Value?.ToString()?.Trim();
+                    var ordQY = worksheet.Cells[row, 4].Value?.ToString()?.Trim();
+                    var priceStr = worksheet.Cells[row, 5].Value?.ToString()?.Trim();
+                    var addPriceStr = worksheet.Cells[row, 6].Value?.ToString()?.Trim();
+                    var expireTimeStr = worksheet.Cells[row, 7].Value?.ToString()?.Trim();
+                    var priceMemo = worksheet.Cells[row, 8].Value?.ToString()?.Trim();
+                    var customer = worksheet.Cells[row, 9].Value?.ToString()?.Trim();
+
+                    // 验证必填字段
+                    if (string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(priceStr))
+                    {
+                        errors.Add(new ImportError { RowNumber = row + 1, ErrorMessage = "必填字段缺失" });
+                        return null;
+                    }
+
+                    // 验证价格格式
+                    if (!double.TryParse(priceStr, out var price) || price <= 0)
+                    {
+                        errors.Add(new ImportError { RowNumber = row + 1, ErrorMessage = "价格格式错误" });
+                        return null;
+                    }
+
+                    // 验证业务规则
+                    var validationResult = ValidateCGFields(type, dn, pn, ordQY);
+                    if (!validationResult.Success)
+                    {
+                        errors.Add(new ImportError { RowNumber = row + 1, ErrorMessage = "字段验证失败" });
+                        return null;
+                    }
+
+                    // 解析其他字段
+                    double.TryParse(addPriceStr, out var addPrice);
+                    DateTime? expireTime = null;
+                    if (!string.IsNullOrWhiteSpace(expireTimeStr))
+                    {
+                        if (DateTime.TryParse(expireTimeStr, out var parsedTime))
+                        {
+                            expireTime = parsedTime;
+                        }
+                        else
+                        {
+                            errors.Add(new ImportError { RowNumber = row + 1, ErrorMessage = "日期格式错误" });
+                            return null;
+                        }
+                    }
+
+                    // 如果没有设置有效期，默认3650天
+                    if (!expireTime.HasValue)
+                    {
+                        expireTime = DateTime.Now.AddDays(3650);
+                    }
+
+                    // 创建实体
+                    return new Ask_CGPriceValue
+                    {
+                        Version = version,
+                        Type = type,
+                        DN = dn,
+                        PN = pn,
+                        ordQY = ordQY,
+                        Price = price,
+                        AddPrice = addPrice,
+                        ExpireTime = expireTime,
+                        PriceMemo = priceMemo,
+                        Customer = customer
+                    };
+                },
+                async (isReplace, validData) =>
+                {
+                    if (isReplace)
+                    {
+                        // 全量替换模式
+                        _db.Ask_CGPriceValue.RemoveRange(_db.Ask_CGPriceValue);
+                        await _db.SaveChangesAsync();
+                    }
+
+                    // 批量插入有效数据
+                    if (validData.Any())
+                    {
+                        _db.Ask_CGPriceValue.AddRange(validData);
+                        await _db.SaveChangesAsync();
+                    }
+                }
+            );
+        }
+
+        #endregion
+
+        #region 通用导入导出方法
+
+        /// <summary>
+        /// 验证上传的Excel文件
+        /// </summary>
+        /// <param name="file">上传的文件</param>
+        /// <returns>验证结果</returns>
+        private ResultModel<bool> ValidateExcelFile(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return ResultModel<bool>.Error("请选择要导入的Excel文件");
+            }
+
+            if (!file.FileName.EndsWith(".xlsx") && !file.FileName.EndsWith(".xls"))
+            {
+                return ResultModel<bool>.Error("请选择Excel文件格式");
+            }
+
+            return ResultModel<bool>.Ok(true);
+        }
+
+        /// <summary>
+        /// 读取Excel文件内容
+        /// </summary>
+        /// <param name="file">上传的文件</param>
+        /// <returns>工作表</returns>
+        private Worksheet ReadExcelFile(IFormFile file)
+        {
+            using var stream = file.OpenReadStream();
+            var workbook = new Workbook(stream);
+            return workbook.Worksheets[0];
+        }
+
+        /// <summary>
+        /// 通用Excel数据导入方法
+        /// </summary>
+        /// <typeparam name="T">实体类型</typeparam>
+        /// <param name="file">上传的Excel文件</param>
+        /// <param name="isReplace">是否全量替换</param>
+        /// <param name="sheetName">工作表名称（用于错误提示）</param>
+        /// <param name="rowParser">行数据解析函数</param>
+        /// <param name="dataSaver">数据保存函数</param>
+        /// <returns>导入结果</returns>
+        private async Task<ResultModel<ImportResult>> ImportExcelDataAsync<T>(
+            IFormFile file,
+            bool isReplace,
+            string sheetName,
+            Func<Worksheet, int, List<ImportError>, T?> rowParser,
+            Func<bool, List<T>, Task> dataSaver) where T : class
+        {
+            var result = new ImportResult();
+            
+            try
+            {
+                // 验证文件
+                var fileValidation = ValidateExcelFile(file);
+                if (!fileValidation.Success)
+                {
+                    return ResultModel<ImportResult>.Error(fileValidation.Message);
+                }
+
+                // 读取Excel文件
+                var worksheet = ReadExcelFile(file);
+                var validData = new List<T>();
+                var errors = new List<ImportError>();
+
+                for (int row = 1; row <= worksheet.Cells.MaxDataRow; row++)
+                {
+                    try
+                    {
+                        var entity = rowParser(worksheet, row, errors);
+                        if (entity != null)
+                        {
+                            validData.Add(entity);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add(new ImportError { RowNumber = row + 1, ErrorMessage = $"数据解析失败：{ex.Message}" });
+                    }
+                }
+
+                // 使用事务保存数据
+                using var transaction = await _db.Database.BeginTransactionAsync();
+                try
+                {
+                    await dataSaver(isReplace, validData);
+                    await transaction.CommitAsync();
+
+                    // 设置返回结果
+                    result.SuccessCount = validData.Count;
+                    result.FailCount = errors.Count;
+                    result.Errors = errors;
+
+                    return ResultModel<ImportResult>.Ok(result);
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    return ResultModel<ImportResult>.Error($"保存数据失败：{ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<ImportResult>.Error($"导入失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 通用数据导出到Excel方法
+        /// </summary>
+        /// <typeparam name="T">数据类型</typeparam>
+        /// <param name="dataProvider">数据提供函数</param>
+        /// <param name="sheetName">工作表名称</param>
+        /// <param name="headers">表头数组</param>
+        /// <param name="dataMapping">数据映射函数</param>
+        /// <returns>Excel文件字节数组</returns>
+        private async Task<byte[]> ExportDataToExcelAsync<T>(
+            Func<Task<ResultModel<PaginationList<T>>>> dataProvider,
+            string sheetName,
+            string[] headers,
+            Func<T, object[]> dataMapping) where T : class
+        {
+            try
+            {
+                var result = await dataProvider();
+
+                if (!result.Success || result.Data == null)
+                {
+                    throw new Exception(result.Message ?? "获取数据失败");
+                }
+
+                return CreateExcelFile(sheetName, headers, result.Data, dataMapping);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"导出失败：{ex.Message}", ex);
+            }
+        }
+
+
+        /// <summary>
+        /// 通用Excel文件创建方法
+        /// </summary>
+        /// <typeparam name="T">数据类型</typeparam>
+        /// <param name="sheetName">工作表名称</param>
+        /// <param name="headers">表头数组</param>
+        /// <param name="dataList">数据列表</param>
+        /// <param name="dataMapping">数据映射函数</param>
+        /// <returns>Excel文件字节数组</returns>
+        private byte[] CreateExcelFile<T>(string sheetName, string[] headers, PaginationList<T> dataList, Func<T, object[]> dataMapping)
+        {
+            var workbook = new Workbook();
+            var worksheet = workbook.Worksheets[0];
+            worksheet.Name = sheetName;
+
+            // 设置表头
+            for (int i = 0; i < headers.Length; i++)
+            {
+                var cell = worksheet.Cells[0, i];
+                cell.Value = headers[i];
+                var style = cell.GetStyle();
+                style.Font.IsBold = true;
+                style.HorizontalAlignment = TextAlignmentType.Center;
+                cell.SetStyle(style);
+            }
+
+            // 填充数据
+            for (int row = 0; row < dataList.Count; row++)
+            {
+                var data = dataList[row];
+                var values = dataMapping(data);
+                for (int col = 0; col < values.Length; col++)
+                {
+                    worksheet.Cells[row + 1, col].Value = values[col];
+                }
+            }
+
+            // 自动列宽
+            for (int i = 0; i < headers.Length; i++)
+            {
+                worksheet.AutoFitColumn(i);
+            }
+
+            using var stream = new MemoryStream();
+            workbook.Save(stream, SaveFormat.Xlsx);
+            return stream.ToArray();
+        }
+        #endregion
     }
 }
