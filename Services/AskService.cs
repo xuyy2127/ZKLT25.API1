@@ -1036,7 +1036,7 @@ namespace ZKLT25.API.Services
                         PriceRatio = outEntity.PriceRatio,
                         BillDetailID = outEntity.BillDetailID,
                         IsPreProBind = outEntity.IsPreProBind,
-                        Timeout = -1 // 设置为有效
+                        Timeout = outEntity.Timeout
                     }).ToList();
 
                     _db.Ask_DataFT.AddRange(newEntities);
@@ -1083,7 +1083,7 @@ namespace ZKLT25.API.Services
                         PriceRatio = (float?)entity.PriceRatio,
                         BillDetailID = entity.BillDetailID,
                         IsPreProBind = entity.IsPreProBind,
-                        Timeout = 1 // 设置为过期
+                        Timeout = entity.Timeout
                     }).ToList();
 
                     _db.Ask_DataFTOut.AddRange(outEntities);
@@ -1136,7 +1136,7 @@ namespace ZKLT25.API.Services
                         PN = outEntity.PN,
                         OrdLJ = outEntity.OrdLJ,
                         IsPreProBind = outEntity.IsPreProBind,
-                        Timeout = -1 // 设置为有效
+                        Timeout = outEntity.Timeout
                     }).ToList();
 
                     _db.Ask_DataFJ.AddRange(newEntities);
@@ -1172,7 +1172,7 @@ namespace ZKLT25.API.Services
                         PN = entity.PN,
                         OrdLJ = entity.OrdLJ,
                         IsPreProBind = entity.IsPreProBind,
-                        Timeout = 1 // 设置为过期
+                        Timeout = entity.Timeout
                     }).ToList();
 
                     _db.Ask_DataFJOut.AddRange(outEntities);
@@ -1239,8 +1239,9 @@ namespace ZKLT25.API.Services
             foreach (var item in items)
             {
                 item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
-                item.PriceStatusText = ZKLT25Profile.GetPriceStatusText(item.Timeout);
-                item.AvailableActions = ZKLT25Profile.GetAvailableActions(item.Timeout);
+                var isValid = item.IsInvalid == 1;
+                item.PriceStatusText = isValid ? "有效" : "已过期";
+                item.AvailableActions = isValid ? "延长有效期,设置过期" : "设置有效";
                 item.DocNameStatus = GetUploadStatusText(item.DocName);
                 item.FileNameStatus = GetUploadStatusText(item.FileName);
             }
