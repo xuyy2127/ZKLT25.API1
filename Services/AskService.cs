@@ -1199,25 +1199,39 @@ namespace ZKLT25.API.Services
                 {
                     case "DATAFT":
                         var ftEntities = await _db.Ask_DataFT.Where(x => ids.Contains(x.ID)).ToListAsync();
-                        SetTimeoutAndBind(ftEntities, -extendDays, ftEntities.First().IsPreProBind);
                         foreach (var entity in ftEntities)
                         {
+                            var currentTimeout = entity.Timeout ?? 0;
+                            if (currentTimeout < 0)
+                            {
+                                entity.Timeout = currentTimeout - extendDays;
+                            }
+                            else
+                            {
+                                entity.Timeout = -extendDays;
+                            }
                             entity.DoUser = currentUser;
                             entity.DoDate = DateTime.Now;
                         }
                         break;
-
                     case "DATAFJ":
                         var fjEntities = await _db.Ask_DataFJ.Where(x => ids.Contains(x.ID)).ToListAsync();
-                        SetTimeoutAndBind(fjEntities, -extendDays, fjEntities.First().IsPreProBind);
                         foreach (var entity in fjEntities)
                         {
+                            var currentTimeout = entity.Timeout ?? 0;
+                            if (currentTimeout < 0)
+                            {
+                                entity.Timeout = currentTimeout - extendDays;
+                            }
+                            else
+                            {
+                                entity.Timeout = -extendDays;
+                            }
                             entity.DoUser = currentUser;
                             entity.DoDate = DateTime.Now;
                         }
                         break;
-
-                default:
+                    default:
                         return ResultModel<bool>.Error("无效的实体类型");
                 }
 
@@ -1234,12 +1248,17 @@ namespace ZKLT25.API.Services
         /// </summary>
         /// <typeparam name="T">实现了IDataItemDto接口的数据传输对象类型</typeparam>
         /// <param name="items">结果集</param>
-        private void DecorateDataList<T>(IEnumerable<T> items) where T : IDataItemDto
+        private void DecorateDataList<T>(IEnumerable<T> items) where T : class, IDataItemDto
         {
             foreach (var item in items)
             {
                 item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
-                var isValid = item.IsInvalid == 1;
+                
+                // 使用反射获取 IsInvalid 属性
+                var isInvalidProp = typeof(T).GetProperty("IsInvalid");
+                var isInvalid = isInvalidProp?.GetValue(item) as int? ?? 0;
+                var isValid = isInvalid == 1;
+                
                 item.PriceStatusText = isValid ? "有效" : "已过期";
                 item.AvailableActions = isValid ? "延长有效期,设置过期" : "设置有效";
                 item.DocNameStatus = GetUploadStatusText(item.DocName);
@@ -1282,18 +1301,6 @@ namespace ZKLT25.API.Services
             if (qto.EndDate.HasValue)
             {
                 query = query.Where(x => x.AskDate <= qto.EndDate.Value);
-            }
-
-            if (includeExpiredFilter && qto.IsExpired.HasValue)
-            {
-                if (qto.IsExpired.Value)
-                {
-                    query = query.Where(x => x.Timeout > 0);
-                }
-                else
-                {
-                    query = query.Where(x => x.Timeout <= 0);
-                }
             }
 
             // 阀体特有筛选条件
@@ -1355,18 +1362,6 @@ namespace ZKLT25.API.Services
             if (qto.EndDate.HasValue)
             {
                 query = query.Where(x => x.AskDate <= qto.EndDate.Value);
-            }
-
-            if (includeExpiredFilter && qto.IsExpired.HasValue)
-            {
-                if (qto.IsExpired.Value)
-                {
-                    query = query.Where(x => x.Timeout > 0);
-                }
-                else
-                {
-                    query = query.Where(x => x.Timeout <= 0);
-                }
             }
 
             // 附件特有筛选条件
