@@ -63,12 +63,12 @@ namespace ZKLT25.API.IServices.Dtos
         public string? ordMed { get; set; }
 
         /// <summary>
-        /// 订单KV值
+        /// KV值
         /// </summary>
         public string? OrdKV { get; set; }
 
         /// <summary>
-        /// 订单法兰
+        /// 法兰
         /// </summary>
         public string? ordFW { get; set; }
 
@@ -108,12 +108,12 @@ namespace ZKLT25.API.IServices.Dtos
         public string? CGPriceMemo { get; set; }
 
         /// <summary>
-        /// 采购员备注（billprice）
+        /// 采购员备注
         /// </summary>
         public string? Remarks { get; set; }
         
         /// <summary>
-        /// 数量（billprice）
+        /// 数量
         /// </summary>
         public double? Num { get; set; }
         

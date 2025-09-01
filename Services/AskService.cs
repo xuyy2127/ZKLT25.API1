@@ -1,78 +1,52 @@
+using Aspose.Cells;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using ZKLT25.API.EntityFrameworkCore;
 using ZKLT25.API.Helper;
 using ZKLT25.API.IServices;
 using ZKLT25.API.IServices.Dtos;
 using ZKLT25.API.Models;
-using System.Security.Claims;
-using System.IdentityModel.Tokens.Jwt;
-using Aspose.Cells;
 
 namespace ZKLT25.API.Services
 {
     public class AskService : IAskService
     {
+        #region 构造函数与常量 (Constructor & Constants)
+
+        // 常量定义，避免魔术字符串
+        private const string DataTypeValve = "阀体";
+        private const string DataTypeAccessory = "附件";
+        private const string EntityTypeDataFT = "DATAFT";
+        private const string EntityTypeDataFJ = "DATAFJ";
+
+        // 业务常量定义
+        private const int DefaultNewPriceValidityDays = 365; // 新报价默认有效期：365天
+        private const int DefaultReactivatePriceValidityDays = 30; // 重新激活的报价默认有效期：30天
+
         private readonly AppDbContext _db;
         private readonly IMapper _mapper;
+        private readonly IMemoryCache _cache;
+        private readonly ILogger<AskService> _logger;
+        private readonly IDateTimeProvider _dateTimeProvider;
 
-        public AskService(AppDbContext db, IMapper mapper)
+        public AskService(AppDbContext db, IMapper mapper, IMemoryCache cache, ILogger<AskService> logger, IDateTimeProvider dateTimeProvider)
         {
             _db = db;
             _mapper = mapper;
+            _cache = cache;
+            _logger = logger;
+            _dateTimeProvider = dateTimeProvider;
         }
 
-
-        #region 日志记录
-        /// <summary>
-        /// 记录修改日志
-        /// </summary>
-        /// <param name="mainId">主表ID</param>
-        /// <param name="dataType">数据类型（"阀体"或"附件"）</param>
-        /// <param name="partType">零件类型</param>
-        /// <param name="partVersion">零件型号</param>
-        /// <param name="partName">零件名称</param>
-        /// <param name="ratio">比例系数</param>
-        /// <param name="currentUser">当前用户</param>
-        private async Task AddLogAsync(int mainId, string dataType, string? partType, string? partVersion, string? partName, double ratio, string? currentUser)
-        {
-            try
-            {
-
-                var log = new Ask_FTFJListLog
-                {
-                    MainID = mainId,
-                    DataType = dataType,
-                    PartType = partType,
-                    PartVersion = partVersion,
-                    PartName = partName,
-                    Ratio = ratio,
-                    CreateUser = currentUser ?? "系统用户",
-                    CreateDate = DateTime.Now
-                };
-
-                _db.Ask_FTFJListLog.Add(log);
-                await _db.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"记录日志失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 根据文件名返回上传状态文本
-        /// </summary>
-        /// <param name="fileName">文件名</param>
-        /// <returns>下载/未上传</returns>
-        private static string GetUploadStatusText(string? fileName)
-        {
-            return string.IsNullOrWhiteSpace(fileName) ? "未上传" : "下载";
-        }
         #endregion
 
-        #region 阀体型号维护
+        #region 1. 基础数据与配置 (Master Data & Configuration)
+
+        #region 1.1. 产品与物料维护 (Product & Material Maintenance)
+
         /// <summary>
         /// 分页查询阀体型号列表
         /// </summary>
@@ -80,7 +54,7 @@ namespace ZKLT25.API.Services
         {
             try
             {
-                var query = _db.Ask_FTList.AsQueryable();
+                var query = _db.Ask_FTList.AsNoTracking().AsQueryable();
 
                 // 关键字搜索：型号和名称
                 if (!string.IsNullOrWhiteSpace(qto.Keyword))
@@ -146,6 +120,7 @@ namespace ZKLT25.API.Services
         /// </summary>
         public async Task<ResultModel<bool>> UpdateFTAsync(int id, Ask_FTListUto uto, string? currentUser)
         {
+            using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
                 var entity = await _db.Ask_FTList.FindAsync(id);
@@ -162,18 +137,19 @@ namespace ZKLT25.API.Services
 
                 _mapper.Map(uto, entity);
 
-                await _db.SaveChangesAsync();
-
                 // 记录修改日志
-                await AddLogAsync(
+                AddLog(
                     mainId: id,
-                    dataType: "阀体",
-                    partType: "阀体",
+                    dataType: DataTypeValve,
+                    partType: DataTypeValve,
                     partVersion: uto.FTVersion,
                     partName: uto.FTName,
                     ratio: uto.ratio ?? 1.0, // 如果为空则使用默认值1.0
                     currentUser: currentUser
                 );
+
+                await _db.SaveChangesAsync(); // 关键：保存所有更改
+                await transaction.CommitAsync();
 
                 var model = ResultModel<bool>.Ok(true);
                 model.Warning = GetRatioWarning(uto.isWG, uto.ratio);
@@ -181,6 +157,7 @@ namespace ZKLT25.API.Services
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 return ResultModel<bool>.Error($"更新失败：{ex.Message}");
             }
         }
@@ -237,51 +214,27 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 批量更新系数
+        /// 批量更新阀体系数
         /// </summary>
         public async Task<ResultModel<bool>> BatchUpdateFTRatioAsync(List<int> ids, double ratio, string? currentUser)
         {
             try
             {
-                if (ids == null || !ids.Any())
-                {
-                    return ResultModel<bool>.Error("请选择要更新的记录");
-                }
-
-                var entities = await _db.Ask_FTList.Where(x => ids.Contains(x.ID)).ToListAsync();
-                if (!entities.Any())
-                {
-                    return ResultModel<bool>.Error("未找到要更新的记录");
-                }
-
-                string? warning = null;
-                // 批量更新系数并记录日志
-                foreach (var entity in entities)
-                {
-                    entity.ratio = ratio;
-
-                    if (warning == null)
-                    {
-                        warning = GetRatioWarning(entity.isWG, entity.ratio);
-                    }
-
-                    // 记录修改日志
-                    await AddLogAsync(
+                // 日志工厂：为阀体创建日志
+                Func<Ask_FTList, Ask_FTFJListLog> logFactory = entity => CreateLog(
                         mainId: entity.ID,
-                        dataType: "阀体",
-                        partType: "阀体",
+                    dataType: DataTypeValve,
+                    partType: DataTypeValve,
                         partVersion: entity.FTVersion,
                         partName: entity.FTName,
                         ratio: ratio,
                         currentUser: currentUser
                     );
-                }
 
-                await _db.SaveChangesAsync();
+                // 警告工厂：为阀体生成警告
+                Func<Ask_FTList, string?> warningFactory = entity => GetRatioWarning(entity.isWG, entity.ratio);
 
-                var model = ResultModel<bool>.Ok(true);
-                model.Warning = warning;
-                return model;
+                return await BatchUpdateRatioAsync<Ask_FTList>(ids, ratio, currentUser, logFactory, warningFactory);
             }
             catch (Exception ex)
             {
@@ -290,33 +243,13 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 警告信息
-        /// </summary>
-        /// <param name="isWG">是否外购 (1=外购, 0=自制)</param>
-        /// <param name="ratio">价格系数</param>
-        /// <returns>警告信息，如果没有警告则返回null</returns>
-        private string? GetRatioWarning(int? isWG, double? ratio)
-        {
-            if (!ratio.HasValue || !isWG.HasValue)
-                return null;
-
-            if (isWG == 1 && ratio <= 1)
-            {
-                return "外购产品的系数小于等于1，请确认是否正确";
-            }
-            return null;
-        }
-        #endregion
-
-        #region 附件系数维护
-        /// <summary>
         /// 分页查询附件列表
         /// </summary>
         public async Task<ResultModel<PaginationList<Ask_FJListDto>>> GetFJPagedListAsync(Ask_FJListQto qto)
         {
             try
             {
-                var query = _db.Ask_FJList.AsQueryable();
+                var query = _db.Ask_FJList.AsNoTracking().AsQueryable();
 
                 // 关键字搜索
                 if (!string.IsNullOrWhiteSpace(qto.Keyword))
@@ -338,79 +271,35 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 批量更新系数
+        /// 批量更新附件系数
         /// </summary>
         public async Task<ResultModel<bool>> BatchUpdateFJRatioAsync(List<int> ids, double ratio, string? currentUser)
         {
             try
             {
-                if (ids == null || !ids.Any())
-                {
-                    return ResultModel<bool>.Error("请选择要更新的记录");
-                }
-
-                var entities = await _db.Ask_FJList.Where(x => ids.Contains(x.ID)).ToListAsync();
-                if (!entities.Any())
-                {
-                    return ResultModel<bool>.Error("未找到要更新的记录");
-                }
-
-                // 批量更新系数并记录日志
-                foreach (var entity in entities)
-                {
-                    entity.ratio = ratio;
-
-                    // 记录修改日志
-                    await AddLogAsync(
+                // 日志工厂：为附件创建日志
+                Func<Ask_FJList, Ask_FTFJListLog> logFactory = entity => CreateLog(
                         mainId: entity.ID,
-                        dataType: "附件",
-                        partType: "附件",
+                    dataType: DataTypeAccessory,
+                    partType: DataTypeAccessory,
                         partVersion: entity.FJType,
                         partName: entity.FJType,
                         ratio: ratio,
                         currentUser: currentUser
                     );
-                }
 
-                await _db.SaveChangesAsync();
-
-                return ResultModel<bool>.Ok(true);
+                return await BatchUpdateRatioAsync<Ask_FJList>(ids, ratio, currentUser, logFactory);
             }
             catch (Exception ex)
             {
                 return ResultModel<bool>.Error($"批量更新失败：{ex.Message}");
             }
         }
+
         #endregion
 
-        #region 阀体 / 附件操作日志查询
-        /// <summary>
-        /// 分页查询阀体 / 附件日志
-        /// </summary>
-        public async Task<ResultModel<PaginationList<Ask_FTFJListLogDto>>> GetFTFJLogPagedListAsync(Ask_FTFJListLogQto qto)
-        {
-            try
-            {
-                // 校验查询参数 & 分页
-                if (!qto.MainID.HasValue || string.IsNullOrWhiteSpace(qto.DataType))
-                    return ResultModel<PaginationList<Ask_FTFJListLogDto>>.Error("查询日志时请同时提供 MainID 和 DataType。");
+        #region 1.2. 供应商维护 (Supplier Maintenance)
 
-                var query = _db.Ask_FTFJListLog.AsNoTracking()
-                    .Where(x => x.MainID == qto.MainID && x.DataType == qto.DataType);
-
-                query = query.OrderByDescending(x => x.CreateDate);
-
-                var list = await PaginationList<Ask_FTFJListLogDto>.CreateAsync(qto.PageNumber, qto.PageSize, query.ProjectTo<Ask_FTFJListLogDto>(_mapper.ConfigurationProvider));
-                return ResultModel<PaginationList<Ask_FTFJListLogDto>>.Ok(list);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<PaginationList<Ask_FTFJListLogDto>>.Error("查询失败，请重试。");
-            }
-        }
-        #endregion
-
-        #region 供应商维护
         /// <summary>
         /// 分页查询供应商信息
         /// </summary>
@@ -418,7 +307,7 @@ namespace ZKLT25.API.Services
         {
             try
             {
-                var query = _db.Ask_Supplier.AsQueryable();
+                var query = _db.Ask_Supplier.AsNoTracking().AsQueryable();
 
                 // 关键字搜索：供应商名称
                 if (!string.IsNullOrWhiteSpace(qto.Keyword))
@@ -453,7 +342,7 @@ namespace ZKLT25.API.Services
                 }
 
                 var entity = _mapper.Map<Ask_Supplier>(cto);
-                entity.KDate = DateTime.Now;
+                entity.KDate = GetCurrentTime();
                 entity.KUser = currentUser ?? "系统用户";
 
                 _db.Ask_Supplier.Add(entity);
@@ -474,7 +363,6 @@ namespace ZKLT25.API.Services
         {
             try
             {
-
                 var entity = await _db.Ask_Supplier.FindAsync(id);
                 if (entity == null)
                 {
@@ -552,7 +440,7 @@ namespace ZKLT25.API.Services
 
          #endregion
 
-        #region 供应商附件配置管理
+        #region 1.3. 供应关系配置 (Sourcing Rules Configuration)
 
         /// <summary>
         /// 获取供应商附件配置页面数据
@@ -562,7 +450,7 @@ namespace ZKLT25.API.Services
             try
             {
                 // 使用LEFT JOIN查询：所有附件 LEFT JOIN 该供应商的供货关系
-                var result = await (from fj in _db.Ask_FJList
+                var result = await (from fj in _db.Ask_FJList.AsNoTracking()
                                    join sr in _db.Ask_SuppRangeFJ.Where(x => x.SuppID == supplierId)
                                    on fj.FJType equals sr.FJType into supplierRelations
                                    from sr in supplierRelations.DefaultIfEmpty()
@@ -585,9 +473,9 @@ namespace ZKLT25.API.Services
         /// </summary>
         public async Task<ResultModel<bool>> BatchUpdateSPFJAsync(int supplierId, List<string> suppliedFJTypes)
         {
+            using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-
                 //  删除该供应商的所有现有配置
                 var existingConfigs = await _db.Ask_SuppRangeFJ
                     .Where(x => x.SuppID == supplierId)
@@ -611,16 +499,15 @@ namespace ZKLT25.API.Services
                 }
 
                 await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
                 return ResultModel<bool>.Ok(true);
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 return ResultModel<bool>.Error($"更新失败: {ex.Message}");
             }
         }
-        #endregion
-
-        #region 供应商阀体配置管理
 
         /// <summary>
         /// 获取供应商阀体配置页面数据
@@ -630,7 +517,7 @@ namespace ZKLT25.API.Services
             try
             {
                 // 使用LEFT JOIN查询：所有阀体 LEFT JOIN 该供应商的供货关系
-                var result = await (from ft in _db.Ask_FTList
+                var result = await (from ft in _db.Ask_FTList.AsNoTracking()
                                    join sr in _db.Ask_SuppRangeFT.Where(x => x.SuppID == supplierId)
                                    on ft.ID equals sr.FTID into supplierRelations
                                    from sr in supplierRelations.DefaultIfEmpty()
@@ -656,10 +543,9 @@ namespace ZKLT25.API.Services
         /// </summary>
         public async Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems, string? currentUser)
         {
+            using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-
-
                 // 删除该供应商的所有现有配置
                 var existingConfigs = await _db.Ask_SuppRangeFT
                     .Where(x => x.SuppID == supplierId)
@@ -684,17 +570,177 @@ namespace ZKLT25.API.Services
                 }
 
                 await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
                 return ResultModel<bool>.Ok(true);
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 return ResultModel<bool>.Error($"更新失败: {ex.Message}");
             }
         }
 
         #endregion
 
-        #region 询价单据查询
+        #region 1.4. 采购成本库 (Purchase Cost Library)
+
+        /// <summary>
+        /// 分页查询采购成本列表
+        /// </summary>
+        public async Task<ResultModel<PaginationList<Ask_CGPriceValueDto>>> GetCGPagedListAsync(Ask_CGPriceValueQto qto)
+        {
+            try
+            {
+                var query = _db.Ask_CGPriceValue.AsNoTracking().AsQueryable();
+
+                // 搜索关键字过滤
+                if (!string.IsNullOrWhiteSpace(qto.Version))
+                {
+                    query = query.Where(x => x.Version != null && x.Version.Contains(qto.Version));
+                }
+
+                if (!string.IsNullOrWhiteSpace(qto.Name))
+                {
+                    query = query.Where(x => x.Name != null && x.Name.Contains(qto.Name));
+                }
+
+                if (!string.IsNullOrWhiteSpace(qto.Type))
+                {
+                    query = query.Where(x => x.Type != null && x.Type.Contains(qto.Type));
+                }
+
+                if (!string.IsNullOrWhiteSpace(qto.Customer))
+                {
+                    query = query.Where(x => x.Customer != null && x.Customer.Contains(qto.Customer));
+                }
+
+                // 有效性筛选
+                if (qto.IsValid.HasValue && qto.IsValid.Value)
+                {
+                    var currentDate = GetCurrentTime();
+                    query = query.Where(x => x.ExpireTime == null || x.ExpireTime > currentDate);
+                }
+                // 当 IsValid = null 时显示全部数据
+
+                // 排序
+                query = query.OrderBy(x => x.Id);
+
+                // 分页
+                var result = await PaginationList<Ask_CGPriceValueDto>.CreateAsync(qto.PageNumber, qto.PageSize, query.ProjectTo<Ask_CGPriceValueDto>(_mapper.ConfigurationProvider));
+                return ResultModel<PaginationList<Ask_CGPriceValueDto>>.Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<PaginationList<Ask_CGPriceValueDto>>.Error($"查询失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 创建采购成本记录
+        /// </summary>
+        public async Task<ResultModel<bool>> CreateCGAsync(Ask_CGPriceValueCto cto)
+        {
+            try
+            {
+                var entity = _mapper.Map<Ask_CGPriceValue>(cto);
+
+                // 如果没有设置有效期，默认3650天
+                if (!entity.ExpireTime.HasValue)
+                {
+                    entity.ExpireTime = GetCurrentTime().AddDays(3650);
+                }
+
+                // 验证字段填写规则
+                var validationResult = ValidateCGFields(entity.Type, entity.DN, entity.PN, entity.ordQY);
+                if (!validationResult.Success)
+                {
+                    return validationResult;
+                }
+
+                _db.Ask_CGPriceValue.Add(entity);
+                await _db.SaveChangesAsync();
+
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<bool>.Error($"创建失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 删除采购成本记录
+        /// </summary>
+        public async Task<ResultModel<bool>> DeleteCGAsync(int id)
+        {
+            try
+            {
+                var entity = await _db.Ask_CGPriceValue.FindAsync(id);
+                if (entity == null)
+                {
+                    return ResultModel<bool>.Error("记录不存在");
+                }
+
+                _db.Ask_CGPriceValue.Remove(entity);
+                await _db.SaveChangesAsync();
+
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<bool>.Error($"删除失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 更新采购成本记录
+        /// </summary>
+        public async Task<ResultModel<bool>> UpdateCGAsync(int id, Ask_CGPriceValueUto uto)
+        {
+            try
+            {
+                var entity = await _db.Ask_CGPriceValue.FindAsync(id);
+                if (entity == null)
+                {
+                    return ResultModel<bool>.Error("记录不存在");
+                }
+
+                // 验证字段填写规则
+                var validationResult = ValidateCGFields(entity.Type, uto.DN, uto.PN, uto.ordQY);
+                if (!validationResult.Success)
+                {
+                    return validationResult;
+                }
+
+                // 更新字段
+                entity.Price = uto.Price;
+                entity.AddPrice = uto.AddPrice ?? 0;
+                entity.DN = uto.DN;
+                entity.PN = uto.PN;
+                entity.ordQY = uto.ordQY;
+                entity.ExpireTime = uto.ExpireTime;
+                entity.PriceMemo = uto.PriceMemo;
+                entity.Customer = uto.Customer;
+                entity.SuppId = uto.SuppId;
+
+                await _db.SaveChangesAsync();
+
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<bool>.Error($"更新失败：{ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #endregion
+
+        #region 2. 核心询价流程 (Core Inquiry Process)
+
+        #region 2.1. 询价单据管理 (Inquiry Bill Management)
+
         /// <summary>
         /// 获取询价分页数据
         /// </summary>
@@ -702,7 +748,7 @@ namespace ZKLT25.API.Services
         {
             try
             {
-                var query = from bill in _db.Ask_Bill
+                var query = from bill in _db.Ask_Bill.AsNoTracking()
                            join priceBill in _db.Price_Bill on bill.BillID equals priceBill.BillID into priceBills
                            from priceBill in priceBills.DefaultIfEmpty()
                            join deliveryBill in _db.AskDay_Bill on bill.BillID equals deliveryBill.PriceBillID into deliveryBills
@@ -757,12 +803,12 @@ namespace ZKLT25.API.Services
 
         /// <summary>
         /// 询价订单详情
-        /// <summary>
-        public async Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(string billId)
+        /// </summary>
+        public async Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(int billId)
         {
             try
             {
-                var query = from detail in _db.Ask_BillDetail.Where(d => d.BillID == int.Parse(billId))
+                var query = from detail in _db.Ask_BillDetail.AsNoTracking().Where(d => d.BillID == billId)
 
                             join priceInfo in _db.Ask_BillPrice
                             on detail.ID equals priceInfo.BillDetailID into gj 
@@ -808,35 +854,279 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 获取询价的状态日志
+        /// 关闭项目（将项目状态从发起0改为已关闭-1）
         /// </summary>
-        public async Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync(Ask_BillLogQto qto)
+        /// <param name="billId">项目ID</param>
+        /// <param name="currentUser">当前用户</param>
+        /// <returns>操作结果</returns>
+        public async Task<ResultModel<int>> CloseProjectAsync(int billId, string? currentUser)
         {
+            using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                var logs = await (from log in _db.Ask_BillLog.Where(x => x.BillDetailID == qto.BillDetailID)
-                                  join price in _db.Ask_BillPrice on log.BillDetailID equals price.BillDetailID into prices
-                                  from price in prices.DefaultIfEmpty()
-                                  orderby log.KDate
-                                  select new Ask_BillLogDto
-                                  {
-                                      KUser = log.KUser,
-                                      KDate = log.KDate,
-                                      State = ZKLT25Profile.GetBillStateText(log.State),
-                                      Price = price != null ? price.Price : null,
-                                      Remarks = price != null ? price.Remarks : null
-                                  }).ToListAsync();
+                // 更新Ask_Bill状态
+                var bill = await _db.Ask_Bill
+                    .FirstOrDefaultAsync(x => x.BillID == billId && x.BillState == 0);
 
-                return ResultModel<List<Ask_BillLogDto>>.Ok(logs);
+                if (bill == null)
+                {
+                    return ResultModel<int>.Error("项目不存在或状态不正确");
+                }
+
+                bill.BillState = -1;
+
+                // 更新关联的Ask_BillDetail状态
+                var billDetails = await _db.Ask_BillDetail
+                    .Where(x => x.BillID == billId && x.State == 0)
+                    .ToListAsync();
+
+                foreach (var detail in billDetails)
+                {
+                    detail.State = -1;
+
+                    // 记录明细状态变更日志
+                    var billLog = new Ask_BillLog
+                    {
+                        BillDetailID = detail.ID,
+                        State = -1,
+                        KDate = GetCurrentTime(),
+                        KUser = currentUser
+                    };
+                    _db.Ask_BillLog.Add(billLog);
+                }
+
+                // 更新关联的AskDay_Bill状态
+                var dayBills = await _db.AskDay_Bill
+                    .Where(x => x.BillID == billId && x.BillState == 0)
+                    .ToListAsync();
+
+                foreach (var dayBill in dayBills)
+                {
+                    dayBill.BillState = -1;
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return ResultModel<int>.Ok(billDetails.Count + dayBills.Count);
             }
             catch (Exception ex)
             {
-                return ResultModel<List<Ask_BillLogDto>>.Error($"查询失败: {ex.Message}");
+                await transaction.RollbackAsync();
+                return ResultModel<int>.Error($"关闭项目失败：{ex.Message}");
             }
         }
+
         #endregion
 
-        #region 阀体附件价格查询
+        #region 2.2. 价格与备注录入 (Pricing & Remark Entry)
+
+        /// <summary>
+        /// 录入价格备注
+        /// </summary>
+        /// <param name="cto">价格录入请求</param>
+        /// <param name="currentUser">当前用户</param>
+        /// <param name="fileName">文件名</param>
+        /// <param name="fileStream">文件流</param>
+        /// <returns>返回影响的记录数</returns>
+        public async Task<ResultModel<int>> SetPriceRemarkAsync(BillPriceCto cto, string? currentUser, string? fileName = null, Stream? fileStream = null)
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                // 步骤1: 获取和验证数据
+                var targetDetails = await GetAndValidateTargetDetails(cto.BillDetailIDs);
+                var supplierIdStr = cto.SuppID?.ToString();
+                var timeout = -(cto.ValidityDays ?? DefaultNewPriceValidityDays);
+                var isPreProBind = cto.IsPreProBind ?? 0;
+
+                // 步骤2: 获取数据仓库表数据
+                var (dataFTList, dataFTOutList, dataFJList, dataFJOutList) = await GetDataWarehouseData(targetDetails, supplierIdStr);
+
+                // 步骤3: 更新价格和明细状态
+                await UpdatePricesAndDetails(targetDetails, cto, currentUser);
+
+                // 步骤4: 更新关联的数据仓库表
+                UpdateDataWarehouseTables(dataFTList, dataFTOutList, dataFJList, dataFJOutList, timeout, isPreProBind);
+
+                // 步骤5: 处理文件上传
+                if (fileStream != null && !string.IsNullOrEmpty(fileName) && cto.BillDetailIDs.Any())
+                {
+                    await UploadQuoteFileAsync(fileName, fileStream, cto.BillDetailIDs.First(), currentUser);
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return ResultModel<int>.Ok(targetDetails.Count);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return ResultModel<int>.Error($"操作失败：{ex.Message}");
+            }
+        }
+
+        // SetPriceRemarkAsync 的私有辅助方法
+        private async Task<List<Ask_BillDetail>> GetAndValidateTargetDetails(List<int> billDetailIds)
+        {
+            var targetDetails = await _db.Ask_BillDetail
+                .Where(x => billDetailIds.Contains(x.ID) && x.State == 0)
+                .ToListAsync();
+
+            if (!targetDetails.Any())
+            {
+                throw new InvalidOperationException("没有找到有效的待处理明细");
+            }
+
+            // 批量操作验证Type和Version是否一致
+            if (billDetailIds.Count > 1)
+            {
+                var firstRecord = targetDetails.First();
+                var differentRecords = targetDetails
+                    .Where(x => x.Type != firstRecord.Type || x.Version != firstRecord.Version)
+                    .ToList();
+
+                if (differentRecords.Any())
+                {
+                    throw new InvalidOperationException($"类型和型号必须相同。首个记录：{firstRecord.Type}-{firstRecord.Version}");
+                }
+            }
+
+            return targetDetails;
+        }
+
+        private async Task<(List<Ask_DataFT> dataFTList, List<Ask_DataFTOut> dataFTOutList, List<Ask_DataFJ> dataFJList, List<Ask_DataFJOut> dataFJOutList)>
+            GetDataWarehouseData(List<Ask_BillDetail> targetDetails, string? supplierIdStr)
+        {
+            var valveBodyIds = targetDetails.Where(x => x.Type == DataTypeValve).Select(x => x.ID).ToList();
+            var attachmentIds = targetDetails.Where(x => x.Type != DataTypeValve).Select(x => x.ID).ToList();
+
+            var dataFTList = valveBodyIds.Any()
+                ? await _db.Ask_DataFT.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                : new List<Ask_DataFT>();
+            var dataFTOutList = valveBodyIds.Any()
+                ? await _db.Ask_DataFTOut.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                : new List<Ask_DataFTOut>();
+
+            var dataFJList = attachmentIds.Any()
+                ? await _db.Ask_DataFJ.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                : new List<Ask_DataFJ>();
+            var dataFJOutList = attachmentIds.Any()
+                ? await _db.Ask_DataFJOut.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                : new List<Ask_DataFJOut>();
+
+            return (dataFTList, dataFTOutList, dataFJList, dataFJOutList);
+        }
+
+        private async Task UpdatePricesAndDetails(List<Ask_BillDetail> targetDetails, BillPriceCto cto, string? currentUser)
+        {
+            var allDetailIDs = targetDetails.Select(d => d.ID).ToList();
+            var existingBillPrices = await _db.Ask_BillPrice
+                .Where(p => allDetailIDs.Contains(p.BillDetailID.Value) && p.SuppID == cto.SuppID)
+                .ToListAsync();
+            var billPriceDict = existingBillPrices.ToDictionary(x => x.BillDetailID.Value);
+
+            foreach (var detail in targetDetails)
+            {
+                // 创建/更新 BillPrice
+                if (!billPriceDict.TryGetValue(detail.ID, out var billPrice))
+                {
+                    billPrice = new Ask_BillPrice
+                    {
+                        BillDetailID = detail.ID,
+                        SuppID = cto.SuppID,
+                        KDate = GetCurrentTime(),
+                        KUser = currentUser
+                    };
+                    _db.Ask_BillPrice.Add(billPrice);
+                    billPriceDict[detail.ID] = billPrice;
+                }
+
+                // 更新价格字段
+                billPrice.Price = cto.Price;
+                billPrice.Num = cto.Num;
+                billPrice.BasicsPrice = cto.BasicsPrice;
+                billPrice.AddPrice = cto.AddPrice;
+                billPrice.Remarks = cto.Remarks;
+                billPrice.KDate = GetCurrentTime();
+                billPrice.KUser = currentUser;
+
+                // 更新BillDetail备注和状态
+                if (!string.IsNullOrWhiteSpace(cto.CGPriceMemo))
+                {
+                    detail.CGPriceMemo = cto.CGPriceMemo;
+                }
+                detail.State = 2; // 已完成
+
+                // 写入日志
+                var billLog = new Ask_BillLog
+                {
+                    BillDetailID = detail.ID,
+                    State = 2,
+                    KDate = GetCurrentTime(),
+                    KUser = currentUser
+                };
+                _db.Ask_BillLog.Add(billLog);
+            }
+        }
+
+        private void UpdateDataWarehouseTables(
+            List<Ask_DataFT> dataFTList,
+            List<Ask_DataFTOut> dataFTOutList,
+            List<Ask_DataFJ> dataFJList,
+            List<Ask_DataFJOut> dataFJOutList,
+            int timeout,
+            int isPreProBind)
+        {
+            SetTimeoutAndBindEntities(dataFTList, timeout, isPreProBind);
+            SetTimeoutAndBindEntities(dataFTOutList, timeout, isPreProBind);
+            SetTimeoutAndBindEntities(dataFJList, timeout, isPreProBind);
+            SetTimeoutAndBindEntities(dataFJOutList, timeout, isPreProBind);
+        }
+
+        private async Task UploadQuoteFileAsync(string fileName, Stream fileStream, int billDetailId, string? currentUser)
+        {
+            var existingFile = await _db.Ask_BillFile
+                .FirstOrDefaultAsync(x => x.BillDetailID == billDetailId);
+
+            if (existingFile != null)
+            {
+                // 更新现有记录
+                existingFile.FileName = fileName;
+            }
+            else
+            {
+                // 创建新记录
+                var billFile = new Ask_BillFile
+                {
+                    BillDetailID = billDetailId,
+                    FileName = fileName,
+                    State = 1
+                };
+                _db.Ask_BillFile.Add(billFile);
+            }
+
+            // 写入文件上传日志
+            var fileLog = new Ask_BillFileLog
+            {
+                BillDetailID = billDetailId,
+                FileName = fileName,
+                CreationDate = GetCurrentTime(),
+                CreationPreson = currentUser
+            };
+            _db.Ask_BillFileLog.Add(fileLog);
+        }
+
+
+        #endregion
+
+        #endregion
+
+        #region 3. 数据查询与分析 (Data Query & Analysis)
+
+        #region 3.1. 历史价格查询 (Historical Price Query)
+
         /// <summary>
         /// 分页查阀体价格
         /// </summary>
@@ -844,6 +1134,9 @@ namespace ZKLT25.API.Services
         {
             try
             {
+                // 获取 FT 类型映射，避免子查询
+                var ftTypeMapping = await GetFTTypeIdMappingAsync();
+
                 IQueryable<Ask_DataFTDto> query;
                 
                 // 根据过期状态筛选确定查询哪张表
@@ -851,18 +1144,18 @@ namespace ZKLT25.API.Services
                 {
                     if (qto.IsExpired.Value)
                     {
-                        query = BuildDataFTExpiredQuery();
+                        query = BuildDataFTExpiredQuery(ftTypeMapping);
                     }
                     else
                     {
-                        query = BuildDataFTActiveQuery();
+                        query = BuildDataFTActiveQuery(ftTypeMapping);
                     }
                 }
                 else
                 {
                     // 显示全部数据：合并两张表
-                    var activeQuery = BuildDataFTActiveQuery();
-                    var expiredQuery = BuildDataFTExpiredQuery();
+                    var activeQuery = BuildDataFTActiveQuery(ftTypeMapping);
+                    var expiredQuery = BuildDataFTExpiredQuery(ftTypeMapping);
                     query = activeQuery.Union(expiredQuery);
                 }
 
@@ -891,6 +1184,9 @@ namespace ZKLT25.API.Services
         {
             try
             {
+                // 预加载附件类型ID映射（带缓存）
+                var fjTypeMapping = await GetFJTypeIdMappingAsync();
+
                 // 根据过期状态筛选确定查询哪张表
                 IQueryable<Ask_DataFJDto> query;
                 
@@ -898,18 +1194,18 @@ namespace ZKLT25.API.Services
                 {
                     if (qto.IsExpired.Value)
                     {
-                        query = BuildDataFJExpiredQuery();
+                        query = BuildDataFJExpiredQuery(fjTypeMapping);
                     }
                     else
                     {
-                        query = BuildDataFJActiveQuery();
+                        query = BuildDataFJActiveQuery(fjTypeMapping);
                     }
                 }
                 else
                 {
                     // 显示全部数据：合并两张表
-                    var activeQuery = BuildDataFJActiveQuery();
-                    var expiredQuery = BuildDataFJExpiredQuery();
+                    var activeQuery = BuildDataFJActiveQuery(fjTypeMapping);
+                    var expiredQuery = BuildDataFJExpiredQuery(fjTypeMapping);
                     query = activeQuery.Union(expiredQuery);
                 }
 
@@ -946,701 +1242,71 @@ namespace ZKLT25.API.Services
             }
         }
 
-        /// <summary>
-        /// 通用的数据状态变更处理
-        /// </summary>
-        private async Task<ResultModel<bool>> HandleDataStatusChangeAsync(List<int> ids, string action, int? extendDays, string? currentUser, string entityType)
-        {
-            switch (action.ToUpper())
-            {
-                case "SETVALID":
-                    // 设置有效
-                    return await MigrateDataAsync(ids, fromExpired: true, currentUser, entityType);
-                case "SETEXPIRED":
-                    // 设置过期
-                    return await MigrateDataAsync(ids, fromExpired: false, currentUser, entityType);
-                case "EXTENDVALID":
-                    // 延长有效期
-                    if (!extendDays.HasValue || extendDays.Value <= 0)
-                {
-                    return ResultModel<bool>.Error("延长有效期需要指定有效的天数");
-                    }
-                    return await ExtendDataTimeoutAsync(ids, extendDays.Value, currentUser, entityType);
-                default:
-                    return ResultModel<bool>.Error("无效的操作类型");
-            }
-                }
-
-        /// <summary>
-        /// 通用数据迁移调度方法
-        /// </summary>
-        private async Task<ResultModel<bool>> MigrateDataAsync(List<int> ids, bool fromExpired, string? currentUser, string entityType)
-        {
-                switch (entityType.ToUpper())
-                {
-                    case "DATAFT":
-                    return await MigrateDataFTAsync(ids, fromExpired, currentUser);
-                case "DATAFJ":
-                    return await MigrateDataFJAsync(ids, fromExpired, currentUser);
-                default:
-                    return ResultModel<bool>.Error("无效的实体类型");
-            }
-        }
-
-        /// <summary>
-        /// 迁移阀体数据
-        /// </summary>
-        private async Task<ResultModel<bool>> MigrateDataFTAsync(List<int> ids, bool fromExpired, string? currentUser)
-        {
-            try
-            {
-                if (fromExpired)
-                {
-                    // 从已过期表迁移到未过期表
-                    var outEntities = await _db.Ask_DataFTOut.Where(x => ids.Contains(x.ID)).ToListAsync();
-                    
-
-                    var newEntities = outEntities.Select(outEntity => new Ask_DataFT
-                    {
-                        Source = outEntity.Source,
-                        AskDate = outEntity.AskDate,
-                        AskProjName = outEntity.AskProjName,
-                        OrdNum = outEntity.OrdNum,
-                        OrdMed = outEntity.OrdMed,
-                        OrdName = outEntity.OrdName,
-                        OrdVersion = outEntity.OrdVersion,
-                        OrdDN = outEntity.OrdDN,
-                        OrdPN = outEntity.OrdPN,
-                        OrdLJ = outEntity.OrdLJ,
-                        OrdFG = outEntity.OrdFG,
-                        OrdFT = outEntity.OrdFT,
-                        OrdFNJ = outEntity.OrdFNJ,
-                        OrdTL = outEntity.OrdTL,
-                        OrdKV = outEntity.OrdKV,
-                        OrdFlow = outEntity.OrdFlow,
-                        OrdLeak = outEntity.OrdLeak,
-                        OrdQYDY = outEntity.OrdQYDY,
-                        OrdUnit = outEntity.OrdUnit,
-                        Num = outEntity.Num,
-                        Memo = outEntity.Memo,
-                        AskRequire = outEntity.AskRequire,
-                        Price = outEntity.Price,
-                        Supplier = outEntity.Supplier,
-                        ProjDay = outEntity.ProjDay,
-                        Day1 = outEntity.Day1,
-                        Day2 = outEntity.Day2,
-                        Day3 = outEntity.Day3,
-                        Memo1 = outEntity.Memo1,
-                        DoUser = currentUser,
-                        DoDate = DateTime.Now,
-                        PriceRatio = outEntity.PriceRatio,
-                        BillDetailID = outEntity.BillDetailID,
-                        IsPreProBind = outEntity.IsPreProBind,
-                        Timeout = outEntity.Timeout
-                    }).ToList();
-
-                    _db.Ask_DataFT.AddRange(newEntities);
-                    _db.Ask_DataFTOut.RemoveRange(outEntities);
-                }
-                else
-                {
-                    // 从未过期表迁移到已过期表
-                            var entities = await _db.Ask_DataFT.Where(x => ids.Contains(x.ID)).ToListAsync();
-
-                    var outEntities = entities.Select(entity => new Ask_DataFTOut
-                    {
-                        Source = entity.Source,
-                        AskDate = entity.AskDate,
-                        AskProjName = entity.AskProjName,
-                        OrdNum = entity.OrdNum,
-                        OrdMed = entity.OrdMed,
-                        OrdName = entity.OrdName,
-                        OrdVersion = entity.OrdVersion,
-                        OrdDN = entity.OrdDN,
-                        OrdPN = entity.OrdPN,
-                        OrdLJ = entity.OrdLJ,
-                        OrdFG = entity.OrdFG,
-                        OrdFT = entity.OrdFT,
-                        OrdFNJ = entity.OrdFNJ,
-                        OrdTL = entity.OrdTL,
-                        OrdKV = entity.OrdKV,
-                        OrdFlow = entity.OrdFlow,
-                        OrdLeak = entity.OrdLeak,
-                        OrdQYDY = entity.OrdQYDY,
-                        OrdUnit = entity.OrdUnit,
-                        Num = entity.Num,
-                        Memo = entity.Memo,
-                        AskRequire = entity.AskRequire,
-                        Price = (float?)entity.Price,
-                        Supplier = entity.Supplier,
-                        ProjDay = entity.ProjDay,
-                        Day1 = entity.Day1,
-                        Day2 = entity.Day2,
-                        Day3 = entity.Day3,
-                        Memo1 = entity.Memo1,
-                        DoUser = currentUser,
-                        DoDate = DateTime.Now,
-                        PriceRatio = (float?)entity.PriceRatio,
-                        BillDetailID = entity.BillDetailID,
-                        IsPreProBind = entity.IsPreProBind,
-                        Timeout = entity.Timeout
-                    }).ToList();
-
-                    _db.Ask_DataFTOut.AddRange(outEntities);
-                    _db.Ask_DataFT.RemoveRange(entities);
-                }
-
-                await _db.SaveChangesAsync();
-                return ResultModel<bool>.Ok(true);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<bool>.Error($"迁移数据失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 迁移附件数据
-        /// </summary>
-        private async Task<ResultModel<bool>> MigrateDataFJAsync(List<int> ids, bool fromExpired, string? currentUser)
-        {
-            try
-            {
-                if (fromExpired)
-                {
-                    // 从已过期表迁移到未过期表
-                    var outEntities = await _db.Ask_DataFJOut.Where(x => ids.Contains(x.ID)).ToListAsync();
-
-                    var newEntities = outEntities.Select(outEntity => new Ask_DataFJ
-                    {
-                        Source = outEntity.Source,
-                        AskDate = outEntity.AskDate,
-                        AskProjName = outEntity.AskProjName,
-                        FJType = outEntity.FJType,
-                        FJVersion = outEntity.FJVersion,
-                        Unit = outEntity.Unit,
-                        Num = outEntity.Num,
-                        Price = outEntity.Price,
-                        Supplier = outEntity.Supplier,
-                        ProjDay = outEntity.ProjDay,
-                        Day1 = outEntity.Day1,
-                        Day2 = outEntity.Day2,
-                        Day3 = outEntity.Day3,
-                        Memo1 = outEntity.Memo1,
-                        DoUser = currentUser,
-                        DoDate = DateTime.Now,
-                        Memo = outEntity.Memo,
-                        PriceRatio = outEntity.PriceRatio,
-                        BillDetailID = outEntity.BillDetailID,
-                        DN = outEntity.DN,
-                        PN = outEntity.PN,
-                        OrdLJ = outEntity.OrdLJ,
-                        IsPreProBind = outEntity.IsPreProBind,
-                        Timeout = outEntity.Timeout
-                    }).ToList();
-
-                    _db.Ask_DataFJ.AddRange(newEntities);
-                    _db.Ask_DataFJOut.RemoveRange(outEntities);
-                }
-                else
-                {
-                    // 从未过期表迁移到已过期表
-                    var entities = await _db.Ask_DataFJ.Where(x => ids.Contains(x.ID)).ToListAsync();
-
-                    var outEntities = entities.Select(entity => new Ask_DataFJOut
-                    {
-                        Source = entity.Source,
-                        AskDate = entity.AskDate,
-                        AskProjName = entity.AskProjName,
-                        FJType = entity.FJType,
-                        FJVersion = entity.FJVersion,
-                        Unit = entity.Unit,
-                        Num = entity.Num,
-                        Price = entity.Price,
-                        Supplier = entity.Supplier,
-                        ProjDay = entity.ProjDay,
-                        Day1 = entity.Day1,
-                        Day2 = entity.Day2,
-                        Day3 = entity.Day3,
-                        Memo1 = entity.Memo1,
-                        DoUser = currentUser,
-                        DoDate = DateTime.Now,
-                        Memo = entity.Memo,
-                        PriceRatio = entity.PriceRatio,
-                        BillDetailID = entity.BillDetailID,
-                        DN = entity.DN,
-                        PN = entity.PN,
-                        OrdLJ = entity.OrdLJ,
-                        IsPreProBind = entity.IsPreProBind,
-                        Timeout = entity.Timeout
-                    }).ToList();
-
-                    _db.Ask_DataFJOut.AddRange(outEntities);
-                    _db.Ask_DataFJ.RemoveRange(entities);
-                }
-
-                await _db.SaveChangesAsync();
-                return ResultModel<bool>.Ok(true);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<bool>.Error($"迁移数据失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 延长数据有效期
-        /// </summary>
-        private async Task<ResultModel<bool>> ExtendDataTimeoutAsync(List<int> ids, int extendDays, string? currentUser, string entityType)
-        {
-            try
-            {
-                switch (entityType.ToUpper())
-                {
-                    case "DATAFT":
-                        var ftEntities = await _db.Ask_DataFT.Where(x => ids.Contains(x.ID)).ToListAsync();
-                        foreach (var entity in ftEntities)
-                        {
-                            var currentTimeout = entity.Timeout ?? 0;
-                            if (currentTimeout < 0)
-                            {
-                                entity.Timeout = currentTimeout - extendDays;
-                            }
-                            else
-                            {
-                                entity.Timeout = -extendDays;
-                            }
-                            entity.DoUser = currentUser;
-                            entity.DoDate = DateTime.Now;
-                        }
-                        break;
-                    case "DATAFJ":
-                        var fjEntities = await _db.Ask_DataFJ.Where(x => ids.Contains(x.ID)).ToListAsync();
-                        foreach (var entity in fjEntities)
-                        {
-                            var currentTimeout = entity.Timeout ?? 0;
-                            if (currentTimeout < 0)
-                            {
-                                entity.Timeout = currentTimeout - extendDays;
-                            }
-                            else
-                            {
-                                entity.Timeout = -extendDays;
-                            }
-                            entity.DoUser = currentUser;
-                            entity.DoDate = DateTime.Now;
-                        }
-                        break;
-                    default:
-                        return ResultModel<bool>.Error("无效的实体类型");
-                }
-
-                await _db.SaveChangesAsync();
-                return ResultModel<bool>.Ok(true);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<bool>.Error($"延长有效期失败：{ex.Message}");
-            }
-        }
-        /// <summary>
-        /// 装饰价格查询结果的派生显示字段
-        /// </summary>
-        /// <typeparam name="T">实现了IDataItemDto接口的数据传输对象类型</typeparam>
-        /// <param name="items">结果集</param>
-        private void DecorateDataList<T>(IEnumerable<T> items) where T : class, IDataItemDto
-        {
-            foreach (var item in items)
-            {
-                item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
-                
-                // 使用反射获取 IsInvalid 属性
-                var isInvalidProp = typeof(T).GetProperty("IsInvalid");
-                var isInvalid = isInvalidProp?.GetValue(item) as int? ?? 0;
-                var isValid = isInvalid == 1;
-                
-                item.PriceStatusText = isValid ? "有效" : "已过期";
-                item.AvailableActions = isValid ? "延长有效期,设置过期" : "设置有效";
-                item.DocNameStatus = GetUploadStatusText(item.DocName);
-                item.FileNameStatus = GetUploadStatusText(item.FileName);
-            }
-        }
-
-        /// <summary>
-        /// 阀体价格查询：应用筛选条件
-        /// </summary>
-        /// <param name="query">查询对象</param>
-        /// <param name="qto">查询参数</param>
-        /// <param name="includeExpiredFilter">是否包含过期状态筛选</param>
-        private static IQueryable<Ask_DataFTDto> ApplyFTFilters(IQueryable<Ask_DataFTDto> query, Ask_DataFTQto qto, bool includeExpiredFilter = true)
-        {
-            if (qto.BillID.HasValue)
-            {
-                query = query.Where(x => x.BillID == qto.BillID.Value);
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.AskProjName))
-            {
-                query = query.Where(x => x.AskProjName!.Contains(qto.AskProjName));
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.SuppName))
-            {
-                query = query.Where(x => x.SuppName.Contains(qto.SuppName));
-            }
-            if (qto.SuppID.HasValue)
-            {
-                query = query.Where(x => x.SuppID == qto.SuppID.Value);
-            }
-
-            if (qto.StartDate.HasValue)
-            {
-                query = query.Where(x => x.AskDate >= qto.StartDate.Value);
-            }
-
-            if (qto.EndDate.HasValue)
-            {
-                query = query.Where(x => x.AskDate <= qto.EndDate.Value);
-            }
-
-            // 阀体特有筛选条件
-            if (!string.IsNullOrWhiteSpace(qto.OrdVersion))
-            {
-                query = query.Where(x => x.OrdVersion!.Contains(qto.OrdVersion));
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.OrdDN))
-            {
-                query = query.Where(x => x.OrdDN!.Contains(qto.OrdDN));
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.OrdPN))
-            {
-                query = query.Where(x => x.OrdPN!.Contains(qto.OrdPN));
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.OrdFT))
-            {
-                query = query.Where(x => x.OrdFT!.Contains(qto.OrdFT));
-            }
-
-            return query;
-        }
-
-        /// <summary>
-        /// 附件价格查询：应用筛选条件
-        /// </summary>
-        /// <param name="query">查询对象</param>
-        /// <param name="qto">查询参数</param>
-        /// <param name="includeExpiredFilter">是否包含过期状态筛选</param>
-        private static IQueryable<Ask_DataFJDto> ApplyFJFilters(IQueryable<Ask_DataFJDto> query, Ask_DataFJQto qto, bool includeExpiredFilter = true)
-        {
-            if (qto.BillID.HasValue)
-            {
-                query = query.Where(x => x.BillID == qto.BillID.Value);
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.AskProjName))
-            {
-                query = query.Where(x => x.AskProjName!.Contains(qto.AskProjName));
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.SuppName))
-            {
-                query = query.Where(x => x.SuppName.Contains(qto.SuppName));
-            }
-            if (qto.SuppID.HasValue)
-            {
-                query = query.Where(x => x.SuppID == qto.SuppID.Value);
-            }
-
-            if (qto.StartDate.HasValue)
-            {
-                query = query.Where(x => x.AskDate >= qto.StartDate.Value);
-            }
-
-            if (qto.EndDate.HasValue)
-            {
-                query = query.Where(x => x.AskDate <= qto.EndDate.Value);
-            }
-
-            // 附件特有筛选条件
-            if (!string.IsNullOrWhiteSpace(qto.FJType))
-            {
-                query = query.Where(x => x.FJType!.Contains(qto.FJType));
-            }
-            if (qto.FJTypeId.HasValue)
-            {
-                query = query.Where(x => x.FJTypeId == qto.FJTypeId.Value);
-            }
-
-            if (!string.IsNullOrWhiteSpace(qto.FJVersion))
-            {
-                query = query.Where(x => x.FJVersion!.Contains(qto.FJVersion));
-            }
-
-            return query;
-        }
-
-
-        /// <summary>
-        /// 统一排序（默认询价日期倒序）
-        /// </summary>
-        private static IQueryable<T> ApplySorting<T>(IQueryable<T> query) where T : class
-        {
-            return query.OrderByDescending(x => EF.Property<DateTime?>(x, "AskDate"));
-        }
-
-        /// <summary>
-        /// 统一分页
-        /// </summary>
-        private static Task<PaginationList<T>> PaginateAsync<T>(int pageNumber, int pageSize, IQueryable<T> query) where T : class
-        {
-            return PaginationList<T>.CreateAsync(pageNumber, pageSize, query);
-        }
-
-        /// <summary>
-        /// 构建阀体价格-有效数据查询（联表并投影为 Ask_DataFTDto）
-        /// </summary>
-        private IQueryable<Ask_DataFTDto> BuildDataFTActiveQuery()
-        {
-            var internalQueryFT = from d in _db.Ask_DataFT
-                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                  from supplier in supplierGroup.DefaultIfEmpty()
-                                  join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
-                                  from billPrice in priceGroup.DefaultIfEmpty()
-                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                  from billFile in fileGroup.DefaultIfEmpty()
-                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
-                                  from billDetail in detailGroup.DefaultIfEmpty()
-                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
-                                  from bill in billGroup.DefaultIfEmpty()
-                                  select new Ask_DataFTDto
-                                  {
-                                      ID = d.ID,
-                                      BillID = billDetail != null ? billDetail.BillID : null,
-                                      AskProjName = d.AskProjName,
-                                      SuppName = supplier != null ? supplier.SuppName : "",
-                                      SuppID = supplier != null ? (int?)supplier.ID : null,
-                                      Price = billPrice != null ? billPrice.Price : null,
-                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                      AskDate = d.AskDate,
-                                      OrdName = d.OrdName,
-                                      OrdVersion = d.OrdVersion,
-                                      OrdDN = d.OrdDN,
-                                      OrdPN = d.OrdPN,
-                                      OrdLJ = d.OrdLJ,
-                                      OrdFG = d.OrdFG,
-                                      OrdFT = d.OrdFT,
-                                      OrdFNJ = d.OrdFNJ,
-                                      OrdTL = d.OrdTL,
-                                      OrdKV = d.OrdKV,
-                                      OrdFlow = d.OrdFlow,
-                                      OrdLeak = d.OrdLeak,
-                                      OrdQYDY = d.OrdQYDY,
-                                      Num = d.Num,
-                                      OrdUnit = d.OrdUnit,
-                                      IsPreProBind = d.IsPreProBind,
-                                      DocName = bill != null ? bill.DocName : null,
-                                      FileName = billFile != null ? billFile.FileName : null,
-                                      IsInvalid = 1,
-                                      Timeout = d.Timeout,
-                                      ProjDay = d.ProjDay,
-                                      Day1 = d.Day1,
-                                      Day2 = d.Day2,
-                                      Memo1 = d.Memo1,
-                                      BillIDText = billDetail != null ? billDetail.BillID.ToString() : null
-                                  };
-
-            return internalQueryFT;
-        }
-
-        /// <summary>
-        /// 构建阀体价格-过期数据查询（联表并投影为 Ask_DataFTDto）
-        /// </summary>
-        private IQueryable<Ask_DataFTDto> BuildDataFTExpiredQuery()
-        {
-            var externalQueryFT = from d in _db.Set<Ask_DataFTOut>()
-                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                  from supplier in supplierGroup.DefaultIfEmpty()
-                                  join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
-                                  from billPrice in priceGroup.DefaultIfEmpty()
-                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                  from billFile in fileGroup.DefaultIfEmpty()
-                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
-                                  from billDetail in detailGroup.DefaultIfEmpty()
-                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
-                                  from bill in billGroup.DefaultIfEmpty()
-                                  select new Ask_DataFTDto
-                                  {
-                                      ID = d.ID,
-                                      BillID = billDetail != null ? billDetail.BillID : null,
-                                      AskProjName = d.AskProjName,
-                                      SuppName = supplier != null ? supplier.SuppName : "",
-                                      SuppID = supplier != null ? (int?)supplier.ID : null,
-                                      Price = billPrice != null ? billPrice.Price : null,
-                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                      AskDate = d.AskDate,
-                                      OrdName = d.OrdName,
-                                      OrdVersion = d.OrdVersion,
-                                      OrdDN = d.OrdDN,
-                                      OrdPN = d.OrdPN,
-                                      OrdLJ = d.OrdLJ,
-                                      OrdFG = d.OrdFG,
-                                      OrdFT = d.OrdFT,
-                                      OrdFNJ = d.OrdFNJ,
-                                      OrdTL = d.OrdTL,
-                                      OrdKV = d.OrdKV,
-                                      OrdFlow = d.OrdFlow,
-                                      OrdLeak = d.OrdLeak,
-                                      OrdQYDY = d.OrdQYDY,
-                                      Num = d.Num,
-                                      OrdUnit = d.OrdUnit,
-                                      IsPreProBind = d.IsPreProBind,
-                                      DocName = bill != null ? bill.DocName : null,
-                                      FileName = billFile != null ? billFile.FileName : null,
-                                      IsInvalid = 0,
-                                      Timeout = d.Timeout,
-                                      ProjDay = d.ProjDay,
-                                      Day1 = d.Day1,
-                                      Day2 = d.Day2,
-                                      Memo1 = d.Memo1,
-                                      BillIDText = billDetail != null ? billDetail.BillID.ToString() : null
-                                  };
-
-            return externalQueryFT;
-        }
-        /// <summary>
-        /// 构建附件价格-有效数据查询（联表并投影为 Ask_DataFJDto）
-        /// </summary>
-        private IQueryable<Ask_DataFJDto> BuildDataFJActiveQuery()
-        {
-            var internalQueryFJ = from d in _db.Ask_DataFJ
-                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID
-                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID
-                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                  from supplier in supplierGroup.DefaultIfEmpty()
-                                  join bp in (
-                                      from p in _db.Ask_BillPrice
-                                      group p by p.BillDetailID into g
-                                      select new { BillDetailID = g.Key, BasicsPrice = g.Max(x => x.BasicsPrice ?? 0), AddPrice = g.Max(x => x.AddPrice ?? 0) }
-                                  ) on d.BillDetailID equals bp.BillDetailID into priceGroup
-                                  from billPrice in priceGroup.DefaultIfEmpty()
-                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                  from billFile in fileGroup.DefaultIfEmpty()
-                                  select new Ask_DataFJDto
-                                  {
-                                      ID = d.ID,
-                                      BillID = billDetail.BillID,
-                                      AskProjName = d.AskProjName,
-                                      SuppName = supplier != null ? supplier.SuppName : "",
-                                      SuppID = supplier != null ? (int?)supplier.ID : null,
-                                      Price = (double?)d.Price,
-                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                      AskDate = d.AskDate,
-                                      FJType = d.FJType,
-                                      FJTypeId = _db.Ask_FJList.Where(t => t.FJType == d.FJType).Select(t => (int?)t.ID).FirstOrDefault(),
-                                      FJVersion = d.FJVersion,
-                                      Num = d.Num,
-                                      Unit = d.Unit,
-                                      IsPreProBind = d.IsPreProBind,
-                                      DocName = bill.DocName,
-                                      FileName = billFile != null ? billFile.FileName : null,
-                                      Timeout = d.Timeout,
-                                      IsInvalid = 1,
-                                      ProjDay = d.ProjDay,
-                                      Day1 = d.Day1,
-                                      Day2 = d.Day2,
-                                      Memo1 = d.Memo1,
-                                      BillIDText = billDetail.BillID.ToString()
-                                  };
-
-            return internalQueryFJ;
-        }
-
-        /// <summary>
-        /// 构建附件价格-过期数据查询（联表并投影为 Ask_DataFJDto）
-        /// </summary>
-        private IQueryable<Ask_DataFJDto> BuildDataFJExpiredQuery()
-        {
-            var externalQueryFJ = from d in _db.Ask_DataFJOut
-                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID
-                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID
-                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
-                                  from supplier in supplierGroup.DefaultIfEmpty()
-                                  join bp in (
-                                      from p in _db.Ask_BillPrice
-                                      group p by p.BillDetailID into g
-                                      select new { BillDetailID = g.Key, BasicsPrice = g.Max(x => x.BasicsPrice ?? 0), AddPrice = g.Max(x => x.AddPrice ?? 0) }
-                                  ) on d.BillDetailID equals bp.BillDetailID into priceGroup
-                                  from billPrice in priceGroup.DefaultIfEmpty()
-                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
-                                  from billFile in fileGroup.DefaultIfEmpty()
-                                  select new Ask_DataFJDto
-                                  {
-                                      ID = d.ID,
-                                      BillID = billDetail.BillID,
-                                      AskProjName = d.AskProjName,
-                                      SuppName = supplier != null ? supplier.SuppName : "",
-                                      SuppID = supplier != null ? (int?)supplier.ID : null,
-                                      Price = (double?)d.Price,
-                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
-                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
-                                      AskDate = d.AskDate,
-                                      FJType = d.FJType,
-                                      FJTypeId = _db.Ask_FJList.Where(t => t.FJType == d.FJType).Select(t => (int?)t.ID).FirstOrDefault(),
-                                      FJVersion = d.FJVersion,
-                                      Num = d.Num,
-                                      Unit = d.Unit,
-                                      IsPreProBind = d.IsPreProBind,
-                                      DocName = bill.DocName,
-                                      FileName = billFile != null ? billFile.FileName : null,
-                                      Timeout = d.Timeout,
-                                      IsInvalid = 0,
-                                      ProjDay = d.ProjDay,
-                                      Day1 = d.Day1,
-                                      Day2 = d.Day2,
-                                      Memo1 = d.Memo1,
-                                      BillIDText = billDetail.BillID.ToString()
-                                  };
-
-            return externalQueryFJ;
-        }
-
-        /// <summary>
-        /// 按数据状态选择（true=未过期，false=已过期，null=合并显示）
-        /// </summary>
-        private static IQueryable<T> ComposeView<T>(IQueryable<T> internalQuery, IQueryable<T> externalQuery, int? isOutView)
-        {
-            if (isOutView == 1) return internalQuery;
-            if (isOutView == 0) return externalQuery;
-            return internalQuery.Union(externalQuery);
-        }
-
-        /// <summary>
-        /// 批量设置 Timeout 与 IsPreProBind
-        /// </summary>
-        private static void SetTimeoutAndBind<T>(IEnumerable<T> items, int timeout, int isPreProBind) where T : class
-        {
-            foreach (var item in items)
-            {
-                // 使用反射设置属性
-                var timeoutProp = typeof(T).GetProperty("Timeout");
-                var bindProp = typeof(T).GetProperty("IsPreProBind");
-
-                if (timeoutProp != null && timeoutProp.CanWrite)
-                    timeoutProp.SetValue(item, timeout);
-
-                if (bindProp != null && bindProp.CanWrite)
-                    bindProp.SetValue(item, isPreProBind);
-            }
-        }
         #endregion
 
-        #region 导出为excel表
+        #region 3.2. 日志查询 (Log Query)
+
+        /// <summary>
+        /// 分页查询阀体 / 附件日志
+        /// </summary>
+        public async Task<ResultModel<PaginationList<Ask_FTFJListLogDto>>> GetFTFJLogPagedListAsync(Ask_FTFJListLogQto qto)
+        {
+            try
+            {
+                // 校验查询参数 & 分页
+                if (!qto.MainID.HasValue || string.IsNullOrWhiteSpace(qto.DataType))
+                    return ResultModel<PaginationList<Ask_FTFJListLogDto>>.Error("查询日志时请同时提供 MainID 和 DataType。");
+
+                var query = _db.Ask_FTFJListLog.AsNoTracking()
+                    .Where(x => x.MainID == qto.MainID && x.DataType == qto.DataType);
+
+                query = query.OrderByDescending(x => x.CreateDate);
+
+                var list = await PaginationList<Ask_FTFJListLogDto>.CreateAsync(qto.PageNumber, qto.PageSize, query.ProjectTo<Ask_FTFJListLogDto>(_mapper.ConfigurationProvider));
+                return ResultModel<PaginationList<Ask_FTFJListLogDto>>.Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<PaginationList<Ask_FTFJListLogDto>>.Error("查询失败，请重试。");
+            }
+        }
+
+        /// <summary>
+        /// 获取询价的状态日志
+        /// </summary>
+        public async Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync(Ask_BillLogQto qto)
+        {
+            try
+            {
+                var logs = await (from log in _db.Ask_BillLog.AsNoTracking().Where(x => x.BillDetailID == qto.BillDetailID)
+                                  join price in _db.Ask_BillPrice on log.BillDetailID equals price.BillDetailID into prices
+                                  from price in prices.DefaultIfEmpty()
+                                  orderby log.KDate
+                                  select new Ask_BillLogDto
+                                  {
+                                      KUser = log.KUser,
+                                      KDate = log.KDate,
+                                      State = ZKLT25Profile.GetBillStateText(log.State),
+                                      Price = price != null ? price.Price : null,
+                                      Remarks = price != null ? price.Remarks : null
+                                  }).ToListAsync();
+
+                return ResultModel<List<Ask_BillLogDto>>.Ok(logs);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<List<Ask_BillLogDto>>.Error($"查询失败: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #endregion
+
+        #region 4. 数据导入导出 (Data Exchange)
+
+        #region 4.1. 导出 (Export)
+
         /// <summary>
         /// 导出附件询价数据为 Excel 文件
         /// </summary>
@@ -1755,417 +1421,6 @@ namespace ZKLT25.API.Services
             );
         }
 
-        #endregion
-
-        #region 价格/备注录入
-
-        /// <summary>
-        /// 录入价格备注
-        /// </summary>
-        /// <param name="cto">价格录入请求</param>
-        /// <param name="currentUser">当前用户</param>
-        /// <returns>返回影响的记录数</returns>
-        public async Task<ResultModel<int>> SetPriceRemarkAsync(BillPriceCto cto, string? currentUser)
-        {
-            using var transaction = await _db.Database.BeginTransactionAsync();
-            try
-            {
-                var targetDetails = await _db.Ask_BillDetail
-                    .Where(x => cto.BillDetailIDs.Contains(x.ID) && x.State == 0)
-                    .ToListAsync();
-
-                // 批量操作验证Type和Version是否一致
-                if (cto.BillDetailIDs.Count > 1)
-                {
-                    var firstRecord = targetDetails.First();
-                    var differentRecords = targetDetails
-                        .Where(x => x.Type != firstRecord.Type || x.Version != firstRecord.Version)
-                        .ToList();
-                    
-                    if (differentRecords.Any())
-                    {
-                        return ResultModel<int>.Error($"类型和型号必须相同。首个记录：{firstRecord.Type}-{firstRecord.Version}");
-                    }
-                }
-
-                var allDetailIDs = targetDetails.Select(d => d.ID).ToList();
-                var supplierIdStr = cto.SuppID?.ToString();
-                var timeout = -(cto.ValidityDays ?? 1);
-                var isPreProBind = cto.IsPreProBind ?? 0;
-
-                var existingBillPrices = await _db.Ask_BillPrice
-                    .Where(p => allDetailIDs.Contains(p.BillDetailID.Value) && p.SuppID == cto.SuppID)
-                    .ToListAsync();
-                var billPriceDict = existingBillPrices.ToDictionary(x => x.BillDetailID.Value);
-
-                var valveBodyIds = targetDetails.Where(x => x.Type == "阀体").Select(x => x.ID).ToList();
-                var attachmentIds = targetDetails.Where(x => x.Type != "阀体").Select(x => x.ID).ToList();
-
-                var dataFTList = valveBodyIds.Any() 
-                    ? await _db.Ask_DataFT.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
-                    : new List<Ask_DataFT>();
-                var dataFTOutList = valveBodyIds.Any()
-                    ? await _db.Ask_DataFTOut.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
-                    : new List<Ask_DataFTOut>();
-
-                var dataFJList = attachmentIds.Any()
-                    ? await _db.Ask_DataFJ.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
-                    : new List<Ask_DataFJ>();
-                var dataFJOutList = attachmentIds.Any()
-                    ? await _db.Ask_DataFJOut.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
-                    : new List<Ask_DataFJOut>();
-
-                foreach (var detail in targetDetails)
-                {
-                    // 创建/更新 BillPrice
-                    if (!billPriceDict.TryGetValue(detail.ID, out var billPrice))
-                    {
-                        billPrice = new Ask_BillPrice
-                        {
-                            BillDetailID = detail.ID,
-                            SuppID = cto.SuppID,
-                            KDate = DateTime.Now,
-                            KUser = currentUser
-                        };
-                        _db.Ask_BillPrice.Add(billPrice);
-                        billPriceDict[detail.ID] = billPrice;
-                    }
-                    
-                    // 更新价格字段
-                    billPrice.Price = cto.Price;
-                    billPrice.Num = cto.Num;
-                    billPrice.BasicsPrice = cto.BasicsPrice;
-                    billPrice.AddPrice = cto.AddPrice;
-                    billPrice.Remarks = cto.Remarks;
-                    billPrice.KDate = DateTime.Now;
-                    billPrice.KUser = currentUser;
-
-                    // 更新BillDetail备注和状态
-                    if (!string.IsNullOrWhiteSpace(cto.CGPriceMemo))
-                    {
-                        detail.CGPriceMemo = cto.CGPriceMemo;
-                    }
-                    detail.State = 2; // 已完成
-
-                    // 写入日志
-                    var billLog = new Ask_BillLog
-                    {
-                        BillDetailID = detail.ID,
-                        State = 2,
-                        KDate = DateTime.Now,
-                        KUser = currentUser
-                    };
-                    _db.Ask_BillLog.Add(billLog);
-                }
-
-                // 批量更新
-                SetTimeoutAndBind(dataFTList, timeout, isPreProBind);
-                SetTimeoutAndBind(dataFTOutList, timeout, isPreProBind);
-                SetTimeoutAndBind(dataFJList, timeout, isPreProBind);
-                SetTimeoutAndBind(dataFJOutList, timeout, isPreProBind);
-
-                // 处理报价文件上传
-                if (cto.QuoteFile != null && cto.BillDetailIDs.Any())
-                {
-                    await UploadQuoteFileAsync(cto.QuoteFile, cto.BillDetailIDs.First(), currentUser);
-                }
-
-                await _db.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return ResultModel<int>.Ok(targetDetails.Count);
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return ResultModel<int>.Error($"操作失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 关闭项目（将项目状态从发起0改为已关闭-1）
-        /// </summary>
-        /// <param name="billId">项目ID</param>
-        /// <param name="currentUser">当前用户</param>
-        /// <returns>操作结果</returns>
-        public async Task<ResultModel<int>> CloseProjectAsync(int billId, string? currentUser)
-        {
-            using var transaction = await _db.Database.BeginTransactionAsync();
-            try
-            {
-                // 更新Ask_Bill状态
-                var bill = await _db.Ask_Bill
-                    .FirstOrDefaultAsync(x => x.BillID == billId && x.BillState == 0);
-
-                bill.BillState = -1;
-
-                // 更新关联的Ask_BillDetail状态
-                var billDetails = await _db.Ask_BillDetail
-                    .Where(x => x.BillID == billId && x.State == 0)
-                    .ToListAsync();
-
-                foreach (var detail in billDetails)
-                {
-                    detail.State = -1; 
-                    
-                    // 记录明细状态变更日志
-                    var billLog = new Ask_BillLog
-                    {
-                        BillDetailID = detail.ID,
-                        State = -1,
-                        KDate = DateTime.Now,
-                        KUser = currentUser
-                    };
-                    _db.Ask_BillLog.Add(billLog);
-                }
-
-                // 更新关联的AskDay_Bill状态
-                var dayBills = await _db.AskDay_Bill
-                    .Where(x => x.BillID == billId && x.BillState == 0)
-                    .ToListAsync();
-
-                foreach (var dayBill in dayBills)
-                {
-                    dayBill.BillState = -1;
-                }
-
-                await _db.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return ResultModel<int>.Ok(billDetails.Count + dayBills.Count);
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return ResultModel<int>.Error($"关闭项目失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 上传报价文件
-        /// </summary>
-        /// <param name="file">上传的文件</param>
-        /// <param name="billDetailId">明细ID</param>
-        /// <param name="currentUser">当前用户</param>
-        private async Task UploadQuoteFileAsync(IFormFile file, int billDetailId, string? currentUser)
-        {
-            var fileName = file.FileName;
-            var existingFile = await _db.Ask_BillFile
-                .FirstOrDefaultAsync(x => x.BillDetailID == billDetailId);
-
-            if (existingFile != null)
-            {
-                // 更新现有记录
-                existingFile.FileName = fileName;
-            }
-            else
-            {
-                // 创建新记录
-                var billFile = new Ask_BillFile
-                {
-                    BillDetailID = billDetailId,
-                    FileName = fileName,
-                    State = 1
-                };
-                _db.Ask_BillFile.Add(billFile);
-            }
-
-            // 写入文件上传日志
-            var fileLog = new Ask_BillFileLog
-            {
-                BillDetailID = billDetailId,
-                FileName = fileName,
-                CreationDate = DateTime.Now,
-                CreationPreson = currentUser
-            };
-            _db.Ask_BillFileLog.Add(fileLog);
-        }
-
-
-        #endregion
-
-        #region 采购成本维护
-        /// <summary>
-        /// 分页查询采购成本列表
-        /// </summary>
-        public async Task<ResultModel<PaginationList<Ask_CGPriceValueDto>>> GetCGPagedListAsync(Ask_CGPriceValueQto qto)
-        {
-            try
-            {
-                var query = _db.Ask_CGPriceValue.AsQueryable();
-
-                // 搜索关键字过滤
-                if (!string.IsNullOrWhiteSpace(qto.Version))
-                {
-                    query = query.Where(x => x.Version != null && x.Version.Contains(qto.Version));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.Name))
-                {
-                    query = query.Where(x => x.Name != null && x.Name.Contains(qto.Name));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.Type))
-                {
-                    query = query.Where(x => x.Type != null && x.Type.Contains(qto.Type));
-                }
-
-                if (!string.IsNullOrWhiteSpace(qto.Customer))
-                {
-                    query = query.Where(x => x.Customer != null && x.Customer.Contains(qto.Customer));
-                }
-
-                // 有效性筛选
-                if (qto.IsValid.HasValue && qto.IsValid.Value)
-                {
-                    var currentDate = DateTime.Now;
-                    query = query.Where(x => x.ExpireTime == null || x.ExpireTime > currentDate);
-                }
-                // 当 IsValid = null 时显示全部数据
-
-                // 排序
-                query = query.OrderBy(x => x.Id);
-
-                // 分页
-                var result = await PaginationList<Ask_CGPriceValueDto>.CreateAsync(qto.PageNumber, qto.PageSize, query.ProjectTo<Ask_CGPriceValueDto>(_mapper.ConfigurationProvider));
-                return ResultModel<PaginationList<Ask_CGPriceValueDto>>.Ok(result);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<PaginationList<Ask_CGPriceValueDto>>.Error($"查询失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 创建采购成本记录
-        /// </summary>
-        public async Task<ResultModel<bool>> CreateCGAsync(Ask_CGPriceValueCto cto)
-        {
-            try
-            {
-                var entity = _mapper.Map<Ask_CGPriceValue>(cto);
-                
-                // 如果没有设置有效期，默认3650天
-                if (!entity.ExpireTime.HasValue)
-                {
-                    entity.ExpireTime = DateTime.Now.AddDays(3650);
-                }
-
-                // 验证字段填写规则
-                var validationResult = ValidateCGFields(entity.Type, entity.DN, entity.PN, entity.ordQY);
-                if (!validationResult.Success)
-                {
-                    return validationResult;
-                }
-
-                _db.Ask_CGPriceValue.Add(entity);
-                await _db.SaveChangesAsync();
-
-                return ResultModel<bool>.Ok(true);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<bool>.Error($"创建失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 删除采购成本记录
-        /// </summary>
-        public async Task<ResultModel<bool>> DeleteCGAsync(int id)
-        {
-            try
-            {
-                var entity = await _db.Ask_CGPriceValue.FindAsync(id);
-                _db.Ask_CGPriceValue.Remove(entity);
-                await _db.SaveChangesAsync();
-
-                return ResultModel<bool>.Ok(true);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<bool>.Error($"删除失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 更新采购成本记录
-        /// </summary>
-        public async Task<ResultModel<bool>> UpdateCGAsync(int id, Ask_CGPriceValueUto uto)
-        {
-            try
-            {
-                var entity = await _db.Ask_CGPriceValue.FindAsync(id);
-                if (entity == null)
-                {
-                    return ResultModel<bool>.Error("记录不存在");
-                }
-
-                // 验证字段填写规则
-                var validationResult = ValidateCGFields(entity.Type, uto.DN, uto.PN, uto.ordQY);
-                if (!validationResult.Success)
-                {
-                    return validationResult;
-                }
-
-                // 更新字段
-                entity.Price = uto.Price;
-                entity.AddPrice = uto.AddPrice ?? 0;
-                entity.DN = uto.DN;
-                entity.PN = uto.PN;
-                entity.ordQY = uto.ordQY;
-                entity.ExpireTime = uto.ExpireTime;
-                entity.PriceMemo = uto.PriceMemo;
-                entity.Customer = uto.Customer;
-                entity.SuppId = uto.SuppId;
-
-                await _db.SaveChangesAsync();
-
-                return ResultModel<bool>.Ok(true);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<bool>.Error($"更新失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 验证采购成本字段填写规则
-        /// </summary>
-        /// <param name="type">类型</param>
-        /// <param name="dn">口径</param>
-        /// <param name="pn">压力</param>
-        /// <param name="ordQY">气源压力</param>
-        /// <returns>验证结果</returns>
-        private ResultModel<bool> ValidateCGFields(string? type, string? dn, string? pn, string? ordQY)
-        {
-            if (type == "执行机构")
-            {
-                // 执行机构类型：气源压力可以填写
-                if (!string.IsNullOrWhiteSpace(dn) || !string.IsNullOrWhiteSpace(pn))
-                {
-                    return ResultModel<bool>.Error("字段验证失败");
-                }
-            }
-            else if (type == "配对法兰及螺栓螺母")
-            {
-                // 配对法兰及螺栓螺母类型：DN和PN可以填写
-                if (!string.IsNullOrWhiteSpace(ordQY))
-                {
-                    return ResultModel<bool>.Error("字段验证失败");
-                }
-            }
-            else
-            {
-                if (!string.IsNullOrWhiteSpace(dn) || !string.IsNullOrWhiteSpace(pn) || !string.IsNullOrWhiteSpace(ordQY))
-                {
-                    return ResultModel<bool>.Error("字段验证失败");
-                }
-            }
-
-            return ResultModel<bool>.Ok(true);
-        }
-
         /// <summary>
         /// 导出采购成本数据为Excel文件
         /// </summary>
@@ -2201,6 +1456,9 @@ namespace ZKLT25.API.Services
             );
         }
 
+        #endregion
+
+        #region 4.2. 导入 (Import)
 
         /// <summary>
         /// 导入采购成本数据Excel文件
@@ -2266,7 +1524,7 @@ namespace ZKLT25.API.Services
                     // 如果没有设置有效期，默认3650天
                     if (!expireTime.HasValue)
                     {
-                        expireTime = DateTime.Now.AddDays(3650);
+                        expireTime = GetCurrentTime().AddDays(3650);
                     }
 
                     // 创建实体
@@ -2284,71 +1542,706 @@ namespace ZKLT25.API.Services
                         Customer = customer
                     };
                 },
-                async (isReplace, validData) =>
+                                async (isReplace, validData) =>
                 {
                     if (isReplace)
                     {
-                        // 全量替换模式
+                        // 全量替换模式：先删除所有数据，但不立即保存
                         _db.Ask_CGPriceValue.RemoveRange(_db.Ask_CGPriceValue);
-                        await _db.SaveChangesAsync();
                     }
 
                     // 批量插入有效数据
                     if (validData.Any())
                     {
                         _db.Ask_CGPriceValue.AddRange(validData);
-                        await _db.SaveChangesAsync();
                     }
+                    
+                    // 统一保存，确保事务完整性
+                    await _db.SaveChangesAsync();
                 }
             );
         }
 
         #endregion
 
-        #region 通用导入导出方法
+        #endregion
+
+        #region 5. 内部帮助方法 (Private Helpers)
+
+        #region 5.1. 通用业务逻辑 (Common Business Logic)
 
         /// <summary>
-        /// 验证上传的Excel文件
+        /// 通用的数据状态变更处理
         /// </summary>
-        /// <param name="file">上传的文件</param>
-        /// <returns>验证结果</returns>
-        private ResultModel<bool> ValidateExcelFile(IFormFile file)
+        private async Task<ResultModel<bool>> HandleDataStatusChangeAsync(List<int> ids, string action, int? extendDays, string? currentUser, string entityType)
         {
-            if (file == null || file.Length == 0)
+            switch (action.ToUpper())
             {
-                return ResultModel<bool>.Error("请选择要导入的Excel文件");
+                case "SETVALID":
+                    // 设置有效
+                    return await MigrateDataAsync(ids, fromExpired: true, currentUser, entityType);
+                case "SETEXPIRED":
+                    // 设置过期
+                    return await MigrateDataAsync(ids, fromExpired: false, currentUser, entityType);
+                case "EXTENDVALID":
+                    // 延长有效期
+                    if (!extendDays.HasValue || extendDays.Value <= 0)
+                    {
+                        return ResultModel<bool>.Error("延长有效期需要指定有效的天数");
+                    }
+                    return await ExtendDataTimeoutAsync(ids, extendDays.Value, currentUser, entityType);
+                default:
+                    return ResultModel<bool>.Error("无效的操作类型");
+            }
+        }
+
+        /// <summary>
+        /// 迁移阀体数据
+        /// </summary>
+        private async Task<ResultModel<bool>> MigrateDataFTAsync(List<int> ids, bool fromExpired, string? currentUser)
+        {
+            string sourceTable = fromExpired ? "Ask_DataFTOut" : "Ask_DataFT";
+            string targetTable = fromExpired ? "Ask_DataFT" : "Ask_DataFTOut";
+
+            // ！！！重要！！！
+            // 如果修改了 Ask_DataFT 或 Ask_DataFTOut 实体，必须手动同步更新下面的字段列表！
+            string columns = "Source, AskDate, AskProjName, OrdNum, OrdMed, OrdName, OrdVersion, OrdDN, OrdPN, OrdLJ, OrdFG, OrdFT, OrdFNJ, OrdTL, OrdKV, OrdFlow, OrdLeak, OrdQYDY, OrdUnit, Num, Memo, AskRequire, Price, Supplier, ProjDay, Day1, Day2, Day3, Memo1, PriceRatio, BillDetailID, IsPreProBind, Timeout";
+            
+            return await MigrateEntityAsync(ids, fromExpired, currentUser, sourceTable, targetTable, columns, DataTypeValve);
+        }
+
+        /// <summary>
+        /// 迁移附件数据
+        /// </summary>
+        private async Task<ResultModel<bool>> MigrateDataFJAsync(List<int> ids, bool fromExpired, string? currentUser)
+        {
+            string sourceTable = fromExpired ? "Ask_DataFJOut" : "Ask_DataFJ";
+            string targetTable = fromExpired ? "Ask_DataFJ" : "Ask_DataFJOut";
+
+            // ！！！重要！！！
+            // 如果修改了 Ask_DataFJ 或 Ask_DataFJOut 实体，必须手动同步更新下面的字段列表！
+            string columns = "Source, AskDate, AskProjName, FJType, FJVersion, Unit, Num, Price, Supplier, ProjDay, Day1, Day2, Day3, Memo1, Memo, PriceRatio, BillDetailID, DN, PN, OrdLJ, IsPreProBind, Timeout";
+            
+            return await MigrateEntityAsync(ids, fromExpired, currentUser, sourceTable, targetTable, columns, DataTypeAccessory);
+        }
+
+        /// <summary>
+        /// 通用数据迁移调度方法
+        /// </summary>
+        private async Task<ResultModel<bool>> MigrateDataAsync(List<int> ids, bool fromExpired, string? currentUser, string entityType)
+        {
+            switch (entityType.ToUpper())
+            {
+                case "DATAFT":
+                    return await MigrateDataFTAsync(ids, fromExpired, currentUser);
+                case "DATAFJ":
+                    return await MigrateDataFJAsync(ids, fromExpired, currentUser);
+                default:
+                    return ResultModel<bool>.Error("无效的实体类型");
+            }
+        }
+
+        /// <summary>
+        /// 延长数据有效期
+        /// </summary>
+        private async Task<ResultModel<bool>> ExtendDataTimeoutAsync(List<int> ids, int extendDays, string? currentUser, string entityType)
+        {
+            try
+            {
+                switch (entityType.ToUpper())
+                {
+                    case EntityTypeDataFT:
+                        await ExtendEntityTimeoutAsync<Ask_DataFT>(ids, extendDays, currentUser);
+                        break;
+                    case EntityTypeDataFJ:
+                        await ExtendEntityTimeoutAsync<Ask_DataFJ>(ids, extendDays, currentUser);
+                        break;
+                    default:
+                        return ResultModel<bool>.Error("无效的实体类型");
+                }
+
+                await _db.SaveChangesAsync(); // 在所有实体更新后，一次性保存
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                return ResultModel<bool>.Error($"延长有效期失败：{ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 通用批量更新系数方法
+        /// </summary>
+        private async Task<ResultModel<bool>> BatchUpdateRatioAsync<TEntity>(
+            List<int> ids,
+            double ratio,
+            string? currentUser,
+            Func<TEntity, Ask_FTFJListLog> logFactory,
+            Func<TEntity, string?>? warningFactory = null) where TEntity : class, IEntityWithId, IEntityWithRatio
+        {
+            if (ids == null || !ids.Any())
+            {
+                return ResultModel<bool>.Error("请选择要更新的记录");
             }
 
-            if (!file.FileName.EndsWith(".xlsx") && !file.FileName.EndsWith(".xls"))
+            var entities = await _db.Set<TEntity>().Where(x => ids.Contains(x.ID)).ToListAsync();
+            if (!entities.Any())
             {
-                return ResultModel<bool>.Error("请选择Excel文件格式");
+                return ResultModel<bool>.Error("未找到要更新的记录");
+            }
+
+            var logs = new List<Ask_FTFJListLog>();
+            string? warning = null;
+
+            foreach (var entity in entities)
+            {
+                entity.ratio = ratio;
+                logs.Add(logFactory(entity));
+
+                if (warning == null && warningFactory != null)
+                {
+                    warning = warningFactory(entity);
+                }
+            }
+
+            _db.Ask_FTFJListLog.AddRange(logs);
+            await _db.SaveChangesAsync();
+
+            var model = ResultModel<bool>.Ok(true);
+            model.Warning = warning;
+            return model;
+        }
+
+        /// <summary>
+        /// 通用数据迁移方法（使用原生SQL优化性能）
+        /// </summary>
+        private async Task<ResultModel<bool>> MigrateEntityAsync(
+            List<int> ids,
+            bool fromExpired,
+            string? currentUser,
+            string sourceTable,
+            string targetTable,
+            string columns,
+            string entityTypeNameForLog)
+        {
+            if (ids == null || !ids.Any())
+            {
+                return ResultModel<bool>.Error("没有要迁移的数据");
+            }
+
+            using var transaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                // --- 安全的参数化查询 ---
+                var parameters = new List<Microsoft.Data.SqlClient.SqlParameter>();
+                var paramNames = new List<string>();
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    var paramName = $"@id{i}";
+                    paramNames.Add(paramName);
+                    parameters.Add(new Microsoft.Data.SqlClient.SqlParameter(paramName, ids[i]));
+                }
+                var idListForSql = string.Join(",", paramNames);
+
+                // 设置新的超时值
+                int newTimeoutValue;
+                if (fromExpired) // 从过期 -> 有效
+                {
+                    // 使用重新激活的默认有效期
+                    newTimeoutValue = -DefaultReactivatePriceValidityDays;
+                }
+                else // 从有效 -> 过期
+                {
+                    newTimeoutValue = 0;
+                }
+
+                // 1. 插入数据（更新Timeout字段）
+                var insertSql = $@"
+                    INSERT INTO {targetTable} ({columns}, DoUser, DoDate) 
+                    SELECT {columns.Replace("Timeout", $"@newTimeoutValue as Timeout")}, @currentUser, @doDate 
+                    FROM {sourceTable} 
+                    WHERE ID IN ({idListForSql})";
+
+                parameters.Add(new Microsoft.Data.SqlClient.SqlParameter("@currentUser", currentUser ?? "系统用户"));
+                parameters.Add(new Microsoft.Data.SqlClient.SqlParameter("@doDate", GetCurrentTime()));
+                parameters.Add(new Microsoft.Data.SqlClient.SqlParameter("@newTimeoutValue", newTimeoutValue));
+                await _db.Database.ExecuteSqlRawAsync(insertSql, parameters.ToArray());
+
+                // 2. 删除数据
+                var deleteSql = $"DELETE FROM {sourceTable} WHERE ID IN ({idListForSql})";
+                var idParameters = parameters.Where(p => p.ParameterName.StartsWith("@id")).ToArray();
+                await _db.Database.ExecuteSqlRawAsync(deleteSql, idParameters);
+
+                await transaction.CommitAsync();
+                return ResultModel<bool>.Ok(true);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "迁移 {EntityType} 数据失败。IDs: {ids}", entityTypeNameForLog, string.Join(",", ids));
+                return ResultModel<bool>.Error("迁移数据失败，请查看系统日志。");
+            }
+        }
+
+        /// <summary>
+        /// 通用延长实体有效期方法
+        /// </summary>
+        private async Task<ResultModel<bool>> ExtendEntityTimeoutAsync<T>(List<int> ids, int extendDays, string? currentUser)
+            where T : class, IEntityWithId, ITimeoutBindable
+        {
+            var entities = await _db.Set<T>().Where(x => ids.Contains(x.ID)).ToListAsync();
+            foreach (var entity in entities)
+            {
+                var currentTimeout = entity.Timeout ?? 0;
+                entity.Timeout = (currentTimeout < 0) ? currentTimeout - extendDays : -extendDays;
+                entity.DoUser = currentUser;
+                entity.DoDate = GetCurrentTime();
+            }
+            return ResultModel<bool>.Ok(true); // 注意：保存操作在外部处理
+        }
+        
+        #endregion
+
+        #region 5.2. 通用查询构建 (Common Query Builders)
+
+        /// <summary>
+        /// 按数据状态选择（true=未过期，false=已过期，null=合并显示）
+        /// </summary>
+        private static IQueryable<T> ComposeView<T>(IQueryable<T> internalQuery, IQueryable<T> externalQuery, int? isOutView)
+        {
+            if (isOutView == 1) return internalQuery;
+            if (isOutView == 0) return externalQuery;
+            return internalQuery.Union(externalQuery);
+        }
+
+        /// <summary>
+        /// 阀体价格查询：应用筛选条件
+        /// </summary>
+        private static IQueryable<Ask_DataFTDto> ApplyFTFilters(IQueryable<Ask_DataFTDto> query, Ask_DataFTQto qto, bool includeExpiredFilter = true)
+        {
+            // 使用扩展方法简化筛选逻辑
+            query = query.ApplyDateRangeFilter(x => x.AskDate, qto.StartDate, qto.EndDate);
+            query = query.ApplyKeywordFilter(x => x.AskProjName, qto.AskProjName);
+            query = query.ApplyKeywordFilter(x => x.SuppName, qto.SuppName);
+
+            // 特定筛选条件
+            if (qto.BillID.HasValue)
+                query = query.Where(x => x.BillID == qto.BillID.Value);
+
+            if (qto.SuppID.HasValue)
+                query = query.Where(x => x.SuppID == qto.SuppID.Value);
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdVersion))
+                query = query.ApplyKeywordFilter(x => x.OrdVersion, qto.OrdVersion);
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdDN))
+                query = query.ApplyKeywordFilter(x => x.OrdDN, qto.OrdDN);
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdPN))
+                query = query.ApplyKeywordFilter(x => x.OrdPN, qto.OrdPN);
+
+            if (!string.IsNullOrWhiteSpace(qto.OrdFT))
+                query = query.ApplyKeywordFilter(x => x.OrdFT, qto.OrdFT);
+
+            if (qto.FTTypeId.HasValue)
+                query = query.Where(x => x.FTTypeId == qto.FTTypeId.Value);
+
+            return query;
+        }
+
+        /// <summary>
+        /// 附件价格查询：应用筛选条件
+        /// </summary>
+        private static IQueryable<Ask_DataFJDto> ApplyFJFilters(IQueryable<Ask_DataFJDto> query, Ask_DataFJQto qto, bool includeExpiredFilter = true)
+        {
+            // 使用扩展方法简化筛选逻辑
+            query = query.ApplyDateRangeFilter(x => x.AskDate, qto.StartDate, qto.EndDate);
+            query = query.ApplyKeywordFilter(x => x.AskProjName, qto.AskProjName);
+            query = query.ApplyKeywordFilter(x => x.SuppName, qto.SuppName);
+
+            // 特定筛选条件
+            if (qto.BillID.HasValue)
+                query = query.Where(x => x.BillID == qto.BillID.Value);
+
+            if (qto.SuppID.HasValue)
+                query = query.Where(x => x.SuppID == qto.SuppID.Value);
+
+            // 附件特有筛选条件
+            if (!string.IsNullOrWhiteSpace(qto.FJType))
+                query = query.ApplyKeywordFilter(x => x.FJType, qto.FJType);
+
+            if (qto.FJTypeId.HasValue)
+                query = query.Where(x => x.FJTypeId == qto.FJTypeId.Value);
+
+            if (!string.IsNullOrWhiteSpace(qto.FJVersion))
+                query = query.ApplyKeywordFilter(x => x.FJVersion, qto.FJVersion);
+
+            return query;
+        }
+
+        /// <summary>
+        /// 构建阀体价格基础查询（联表并投影为 Ask_DataFTDto）
+        /// </summary>
+        private IQueryable<Ask_DataFTDto> BuildDataFTBaseQuery(IQueryable<IDataFTEntity> dataSource, Dictionary<string, int> ftTypeMapping, int isInvalid)
+        {
+            var query = from d in dataSource
+                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                                  from supplier in supplierGroup.DefaultIfEmpty()
+                                  join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
+                                  from billPrice in priceGroup.DefaultIfEmpty()
+                                  join billFile in _db.Ask_BillFile on d.BillDetailID equals billFile.BillDetailID into fileGroup
+                                  from billFile in fileGroup.DefaultIfEmpty()
+                                  join billDetail in _db.Ask_BillDetail on d.BillDetailID equals billDetail.ID into detailGroup
+                                  from billDetail in detailGroup.DefaultIfEmpty()
+                                  join bill in _db.Ask_Bill on billDetail.BillID equals bill.BillID into billGroup
+                                  from bill in billGroup.DefaultIfEmpty()
+                                  select new Ask_DataFTDto
+                                  {
+                                      ID = d.ID,
+                                      BillID = billDetail != null ? billDetail.BillID : null,
+                                      AskProjName = d.AskProjName,
+                                      SuppName = supplier != null ? supplier.SuppName : "",
+                                      SuppID = supplier != null ? (int?)supplier.ID : null,
+                                      Price = billPrice != null ? billPrice.Price : null,
+                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
+                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
+                                      AskDate = d.AskDate,
+                                      OrdName = d.OrdName,
+                                      OrdVersion = d.OrdVersion,
+                                      OrdDN = d.OrdDN,
+                                      OrdPN = d.OrdPN,
+                                      OrdLJ = d.OrdLJ,
+                                      OrdFG = d.OrdFG,
+                                      OrdFT = d.OrdFT,
+                            FTTypeId = ftTypeMapping.ContainsKey(d.OrdVersion ?? "") ? ftTypeMapping[d.OrdVersion ?? ""] : null,
+                                      OrdFNJ = d.OrdFNJ,
+                                      OrdTL = d.OrdTL,
+                                      OrdKV = d.OrdKV,
+                                      OrdFlow = d.OrdFlow,
+                                      OrdLeak = d.OrdLeak,
+                                      OrdQYDY = d.OrdQYDY,
+                                      Num = d.Num,
+                                      OrdUnit = d.OrdUnit,
+                                      IsPreProBind = d.IsPreProBind,
+                                      DocName = bill != null ? bill.DocName : null,
+                                      FileName = billFile != null ? billFile.FileName : null,
+                            IsInvalid = isInvalid,
+                                      Timeout = d.Timeout,
+                                      ProjDay = d.ProjDay,
+                                      Day1 = d.Day1,
+                                      Day2 = d.Day2,
+                                      Memo1 = d.Memo1,
+                                      BillIDText = billDetail != null ? billDetail.BillID.ToString() : null
+                                  };
+
+            return query;
+        }
+
+        /// <summary>
+        /// 构建阀体价格-有效数据查询（联表并投影为 Ask_DataFTDto）
+        /// </summary>
+        private IQueryable<Ask_DataFTDto> BuildDataFTActiveQuery(Dictionary<string, int> ftTypeMapping)
+        {
+            return BuildDataFTBaseQuery(_db.Ask_DataFT.AsNoTracking(), ftTypeMapping, 1);
+        }
+
+        /// <summary>
+        /// 构建阀体价格-过期数据查询（联表并投影为 Ask_DataFTDto）
+        /// </summary>
+        private IQueryable<Ask_DataFTDto> BuildDataFTExpiredQuery(Dictionary<string, int> ftTypeMapping)
+        {
+            return BuildDataFTBaseQuery(_db.Set<Ask_DataFTOut>().AsNoTracking(), ftTypeMapping, 0);
+        }
+        /// <summary>
+        /// 构建附件价格查询基础方法（联表并投影为 Ask_DataFJDto）
+        /// </summary>
+        private IQueryable<Ask_DataFJDto> BuildDataFJBaseQuery(IQueryable<IDataFJEntity> dataSource, Dictionary<string, int> fjTypeMapping, int isInvalid)
+        {
+            var query = from d in dataSource
+                        join billDetail in _db.Ask_BillDetail.AsNoTracking() on d.BillDetailID equals billDetail.ID
+                        join bill in _db.Ask_Bill.AsNoTracking() on billDetail.BillID equals bill.BillID
+                        join supplier in _db.Ask_Supplier.AsNoTracking() on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                                  from supplier in supplierGroup.DefaultIfEmpty()
+                                  join bp in (
+                            from p in _db.Ask_BillPrice.AsNoTracking()
+                                      group p by p.BillDetailID into g
+                                      select new { BillDetailID = g.Key, BasicsPrice = g.Max(x => x.BasicsPrice ?? 0), AddPrice = g.Max(x => x.AddPrice ?? 0) }
+                                  ) on d.BillDetailID equals bp.BillDetailID into priceGroup
+                                  from billPrice in priceGroup.DefaultIfEmpty()
+                        join billFile in _db.Ask_BillFile.AsNoTracking() on d.BillDetailID equals billFile.BillDetailID into fileGroup
+                                  from billFile in fileGroup.DefaultIfEmpty()
+                                  select new Ask_DataFJDto
+                                  {
+                                      ID = d.ID,
+                                      BillID = billDetail.BillID,
+                                      AskProjName = d.AskProjName,
+                                      SuppName = supplier != null ? supplier.SuppName : "",
+                                      SuppID = supplier != null ? (int?)supplier.ID : null,
+                                      Price = (double?)d.Price,
+                                      BasicsPrice = billPrice != null ? billPrice.BasicsPrice : null,
+                                      AddPrice = billPrice != null ? billPrice.AddPrice : null,
+                                      AskDate = d.AskDate,
+                                      FJType = d.FJType,
+                            FJTypeId = fjTypeMapping.ContainsKey(d.FJType ?? "") ? fjTypeMapping[d.FJType ?? ""] : null, // 从字典映射获取，避免子查询
+                                      FJVersion = d.FJVersion,
+                                      Num = d.Num,
+                                      Unit = d.Unit,
+                                      IsPreProBind = d.IsPreProBind,
+                                      DocName = bill.DocName,
+                                      FileName = billFile != null ? billFile.FileName : null,
+                                      Timeout = d.Timeout,
+                            IsInvalid = isInvalid,
+                                      ProjDay = d.ProjDay,
+                                      Day1 = d.Day1,
+                                      Day2 = d.Day2,
+                                      Memo1 = d.Memo1,
+                                      BillIDText = billDetail.BillID.ToString()
+                                  };
+
+            return query;
+        }
+
+        /// <summary>
+        /// 构建附件价格-有效数据查询
+        /// </summary>
+        private IQueryable<Ask_DataFJDto> BuildDataFJActiveQuery(Dictionary<string, int> fjTypeMapping)
+        {
+            return BuildDataFJBaseQuery(_db.Ask_DataFJ.AsNoTracking(), fjTypeMapping, 1);
+        }
+
+        /// <summary>
+        /// 构建附件价格-过期数据查询
+        /// </summary>
+        private IQueryable<Ask_DataFJDto> BuildDataFJExpiredQuery(Dictionary<string, int> fjTypeMapping)
+        {
+            return BuildDataFJBaseQuery(_db.Ask_DataFJOut.AsNoTracking(), fjTypeMapping, 0);
+        }
+
+
+        #endregion
+
+        #region 5.3. 通用工具 (Common Utilities)
+
+        /// <summary>
+        /// 记录修改日志
+        /// </summary>
+        private void AddLog(int mainId, string dataType, string? partType, string? partVersion, string? partName, double ratio, string? currentUser)
+        {
+            try
+            {
+                var log = new Ask_FTFJListLog
+                {
+                    MainID = mainId,
+                    DataType = dataType,
+                    PartType = partType,
+                    PartVersion = partVersion,
+                    PartName = partName,
+                    Ratio = ratio,
+                    CreateUser = currentUser ?? "系统用户",
+                    CreateDate = GetCurrentTime()
+                };
+
+                _db.Ask_FTFJListLog.Add(log);
+
+                _logger.LogInformation("成功添加修改日志: MainID={MainID}, DataType={DataType}, User={User}",
+                    mainId, dataType, currentUser);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "添加修改日志失败: MainID={MainID}, DataType={DataType}, User={User}",
+                    mainId, dataType, currentUser);
+
+                // 日志记录是必需的，重新抛出异常
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 创建日志对象（用于批量操作，不保存到数据库）
+        /// </summary>
+        private Ask_FTFJListLog CreateLog(int mainId, string dataType, string? partType, string? partVersion, string? partName, double ratio, string? currentUser)
+        {
+            return new Ask_FTFJListLog
+            {
+                MainID = mainId,
+                DataType = dataType,
+                PartType = partType,
+                PartVersion = partVersion,
+                PartName = partName,
+                Ratio = ratio,
+                CreateUser = currentUser ?? "系统用户",
+                CreateDate = GetCurrentTime()
+            };
+        }
+
+        /// <summary>
+        /// 批量设置 Timeout 与 IsPreProBind
+        /// </summary>
+        private static void SetTimeoutAndBind<T>(IEnumerable<T> items, int timeout, int isPreProBind) where T : class, IDataItemDto
+        {
+            foreach (var item in items)
+            {
+
+                item.Timeout = timeout;
+                item.IsPreProBind = isPreProBind;
+            }
+        }
+
+        /// <summary>
+        /// 批量设置 Timeout 与 IsPreProBind 
+        /// </summary>
+        private static void SetTimeoutAndBindEntities<T>(IEnumerable<T> items, int timeout, int isPreProBind) where T : class, ITimeoutBindable
+        {
+            foreach (var item in items)
+            {
+                item.Timeout = timeout;
+                item.IsPreProBind = isPreProBind;
+            }
+        }
+
+        /// <summary>
+        /// 获取当前时间（统一时间处理）
+        /// </summary>
+        private DateTime GetCurrentTime() => _dateTimeProvider.UtcNow;
+
+        /// <summary>
+        /// 获取附件类型ID映射字典
+        /// </summary>
+        private async Task<Dictionary<string, int>> GetFJTypeIdMappingAsync()
+        {
+            const string cacheKey = "FJ_TYPE_ID_MAPPING";
+
+            if (_cache.TryGetValue(cacheKey, out Dictionary<string, int> mapping))
+            {
+                return mapping;
+            }
+
+            mapping = await _db.Ask_FJList
+                .AsNoTracking()
+                .ToDictionaryAsync(x => x.FJType ?? "", x => x.ID);
+
+            _cache.Set(cacheKey, mapping, TimeSpan.FromMinutes(30));
+
+            return mapping;
+        }
+
+        /// <summary>
+        /// 获取阀体类型ID映射字典（带缓存）
+        /// </summary>
+        private async Task<Dictionary<string, int>> GetFTTypeIdMappingAsync()
+        {
+            const string cacheKey = "FT_TYPE_ID_MAPPING";
+
+            if (_cache.TryGetValue(cacheKey, out Dictionary<string, int> mapping))
+            {
+                return mapping;
+            }
+
+            mapping = await _db.Ask_FTList
+                .AsNoTracking()
+                .Select(t => new { t.FTVersion, t.ID })
+                .ToDictionaryAsync(t => t.FTVersion ?? "", t => t.ID);
+
+            _cache.Set(cacheKey, mapping, TimeSpan.FromMinutes(30));
+
+            return mapping;
+        }
+
+        /// <summary>
+        /// 警告信息
+        /// </summary>
+        private string? GetRatioWarning(int? isWG, double? ratio)
+        {
+            if (!ratio.HasValue || !isWG.HasValue)
+                return null;
+
+            if (isWG == 1 && ratio <= 1)
+            {
+                return "外购产品的系数小于等于1，请确认是否正确";
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 验证采购成本字段填写规则
+        /// </summary>
+        private ResultModel<bool> ValidateCGFields(string? type, string? dn, string? pn, string? ordQY)
+        {
+            if (type == "执行机构")
+            {
+                // 执行机构类型：气源压力可以填写
+                if (!string.IsNullOrWhiteSpace(dn) || !string.IsNullOrWhiteSpace(pn))
+                {
+                    return ResultModel<bool>.Error("字段验证失败");
+                }
+            }
+            else if (type == "配对法兰及螺栓螺母")
+            {
+                // 配对法兰及螺栓螺母类型：DN和PN可以填写
+                if (!string.IsNullOrWhiteSpace(ordQY))
+                {
+                    return ResultModel<bool>.Error("字段验证失败");
+                }
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(dn) || !string.IsNullOrWhiteSpace(pn) || !string.IsNullOrWhiteSpace(ordQY))
+                {
+                    return ResultModel<bool>.Error("字段验证失败");
+                }
             }
 
             return ResultModel<bool>.Ok(true);
         }
 
         /// <summary>
-        /// 读取Excel文件内容
+        /// 装饰价格查询结果的派生显示字段
         /// </summary>
-        /// <param name="file">上传的文件</param>
-        /// <returns>工作表</returns>
-        private Worksheet ReadExcelFile(IFormFile file)
+        private void DecorateDataList<T>(IEnumerable<T> items) where T : class, IDataItemDto
         {
-            using var stream = file.OpenReadStream();
-            var workbook = new Workbook(stream);
-            return workbook.Worksheets[0];
+            foreach (var item in items)
+            {
+                item.IsPreProBindText = ZKLT25Profile.GetPreProBindText(item.IsPreProBind);
+
+                var isInvalid = item.IsInvalid;
+                var isValid = isInvalid == 1;
+
+                item.PriceStatusText = isValid ? "有效" : "已过期";
+                item.AvailableActions = isValid ? "延长有效期,设置过期" : "设置有效";
+                item.DocNameStatus = GetUploadStatusText(item.DocName);
+                item.FileNameStatus = GetUploadStatusText(item.FileName);
+            }
         }
+
+        /// <summary>
+        /// 统一排序（默认询价日期倒序）
+        /// </summary>
+        private static IQueryable<T> ApplySorting<T>(IQueryable<T> query) where T : class
+        {
+            return query.OrderByDescending(x => EF.Property<DateTime?>(x, "AskDate"));
+        }
+
+        /// <summary>
+        /// 统一分页
+        /// </summary>
+        private static Task<PaginationList<T>> PaginateAsync<T>(int pageNumber, int pageSize, IQueryable<T> query) where T : class
+        {
+            return PaginationList<T>.CreateAsync(pageNumber, pageSize, query);
+        }
+
+        /// <summary>
+        /// 根据文件名返回上传状态文本
+        /// </summary>
+        private static string GetUploadStatusText(string? fileName)
+        {
+            return string.IsNullOrWhiteSpace(fileName) ? "未上传" : "下载";
+        }
+        
+        // --- Excel Helpers ---
 
         /// <summary>
         /// 通用Excel数据导入方法
         /// </summary>
-        /// <typeparam name="T">实体类型</typeparam>
-        /// <param name="file">上传的Excel文件</param>
-        /// <param name="isReplace">是否全量替换</param>
-        /// <param name="sheetName">工作表名称（用于错误提示）</param>
-        /// <param name="rowParser">行数据解析函数</param>
-        /// <param name="dataSaver">数据保存函数</param>
-        /// <returns>导入结果</returns>
         private async Task<ResultModel<ImportResult>> ImportExcelDataAsync<T>(
             IFormFile file,
             bool isReplace,
@@ -2417,12 +2310,6 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 通用数据导出到Excel方法
         /// </summary>
-        /// <typeparam name="T">数据类型</typeparam>
-        /// <param name="dataProvider">数据提供函数</param>
-        /// <param name="sheetName">工作表名称</param>
-        /// <param name="headers">表头数组</param>
-        /// <param name="dataMapping">数据映射函数</param>
-        /// <returns>Excel文件字节数组</returns>
         private async Task<byte[]> ExportDataToExcelAsync<T>(
             Func<Task<ResultModel<PaginationList<T>>>> dataProvider,
             string sheetName,
@@ -2446,16 +2333,37 @@ namespace ZKLT25.API.Services
             }
         }
 
+        /// <summary>
+        /// 验证上传的Excel文件
+        /// </summary>
+        private ResultModel<bool> ValidateExcelFile(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return ResultModel<bool>.Error("请选择要导入的Excel文件");
+            }
+
+            if (!file.FileName.EndsWith(".xlsx") && !file.FileName.EndsWith(".xls"))
+            {
+                return ResultModel<bool>.Error("请选择Excel文件格式");
+            }
+
+            return ResultModel<bool>.Ok(true);
+        }
+
+        /// <summary>
+        /// 读取Excel文件内容
+        /// </summary>
+        private Worksheet ReadExcelFile(IFormFile file)
+        {
+            using var stream = file.OpenReadStream();
+            var workbook = new Workbook(stream);
+            return workbook.Worksheets[0];
+        }
 
         /// <summary>
         /// 通用Excel文件创建方法
         /// </summary>
-        /// <typeparam name="T">数据类型</typeparam>
-        /// <param name="sheetName">工作表名称</param>
-        /// <param name="headers">表头数组</param>
-        /// <param name="dataList">数据列表</param>
-        /// <param name="dataMapping">数据映射函数</param>
-        /// <returns>Excel文件字节数组</returns>
         private byte[] CreateExcelFile<T>(string sheetName, string[] headers, PaginationList<T> dataList, Func<T, object[]> dataMapping)
         {
             var workbook = new Workbook();
@@ -2494,6 +2402,9 @@ namespace ZKLT25.API.Services
             workbook.Save(stream, SaveFormat.Xlsx);
             return stream.ToArray();
         }
+
+        #endregion
+
         #endregion
     }
 }

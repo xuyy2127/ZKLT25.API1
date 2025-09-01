@@ -38,6 +38,12 @@ builder.Logging.AddSerilog(logger, dispose: true);
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 
+// 添加内存缓存服务
+builder.Services.AddMemoryCache();
+
+// 注册时间提供者
+builder.Services.AddScoped<IDateTimeProvider, DateTimeProvider>();
+
 // 异常处理
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddExceptionHandler<BizExceptionHandler>();

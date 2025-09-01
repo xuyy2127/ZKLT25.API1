@@ -32,10 +32,15 @@ namespace ZKLT25.API.IServices.Dtos
         /// 公称压力
         /// </summary>
         public string? OrdPN { get; set; }
-        /// <summary>
-        /// 阀体材质
-        /// </summary>
+                /// <summary>
+        /// 阀体材质
+        /// </summary>
         public string? OrdFT { get; set; }
+        
+        /// <summary>
+        /// 阀体ID
+        /// </summary>
+        public int? FTTypeId { get; set; }
         /// <summary>
         /// 查询开始日期
         /// </summary>

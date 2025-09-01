@@ -16,6 +16,11 @@ namespace ZKLT25.API.IServices.Dtos
         int? Timeout { get; set; }
         
         /// <summary>
+        /// 是否过期（1=有效，0=已过期）
+        /// </summary>
+        int IsInvalid { get; set; }
+        
+        /// <summary>
         /// 文档名称
         /// </summary>
         string? DocName { get; set; }

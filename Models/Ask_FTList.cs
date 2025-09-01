@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ZKLT25.API.Models
 {
-    public class Ask_FTList
+    public class Ask_FTList : IEntityWithId, IEntityWithRatio
     {
         [Key]
         public int ID { get; set; }

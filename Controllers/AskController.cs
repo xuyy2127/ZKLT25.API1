@@ -292,7 +292,7 @@ namespace ZKLT25.API.Controllers
         /// <param name="billId">账单ID</param>
         /// <returns></returns>
         [HttpGet("GetBillDetails/{billId}")]
-        public async Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(string billId)
+        public async Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(int billId)
         {
             return await _service.GetBillDetailsAsync(billId);
         }
@@ -410,6 +410,13 @@ namespace ZKLT25.API.Controllers
         public async Task<ResultModel<int>> SetPriceRemarkAsync([FromForm] BillPriceCto cto)
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            
+            // 在控制器层处理文件，避免 IFormFile 渗透到服务层
+            if (cto.QuoteFile != null && cto.BillDetailIDs.Any())
+            {
+                return await _service.SetPriceRemarkAsync(cto, currentUser, cto.QuoteFile.FileName, cto.QuoteFile.OpenReadStream());
+            }
+            
             return await _service.SetPriceRemarkAsync(cto, currentUser);
         }
 

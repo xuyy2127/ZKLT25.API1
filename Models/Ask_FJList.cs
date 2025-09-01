@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ZKLT25.API.Models
 {
-    public class Ask_FJList
+    public class Ask_FJList : IEntityWithId, IEntityWithRatio
     {
         [Key]
         public int ID { get; set; }

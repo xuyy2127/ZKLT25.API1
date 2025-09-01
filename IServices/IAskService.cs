@@ -167,7 +167,7 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="qto">查询条件</param>
         /// <returns></returns>
-        Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(string billId);
+        Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(int billId);
 
         /// <summary>
         /// 获取询价状态日志
@@ -223,8 +223,10 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="cto">价格录入请求</param>
         /// <param name="currentUser">当前用户</param>
+        /// <param name="fileName">文件名</param>
+        /// <param name="fileStream">文件流</param>
         /// <returns>返回影响的记录数</returns>
-        Task<ResultModel<int>> SetPriceRemarkAsync(BillPriceCto cto, string? currentUser);
+        Task<ResultModel<int>> SetPriceRemarkAsync(BillPriceCto cto, string? currentUser, string? fileName = null, Stream? fileStream = null);
 
         /// <summary>
         /// 关闭项目

@@ -7,7 +7,7 @@ namespace ZKLT25.API.Models
     /// 询价附件数据表
     /// </summary>
     [Table("Ask_DataFJ")]
-    public class Ask_DataFJ
+    public class Ask_DataFJ : IDataFJEntity
     {
         [Key]
         public int ID { get; set; }

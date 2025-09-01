@@ -7,7 +7,7 @@ namespace ZKLT25.API.Models
     /// 询价数据外部表
     /// </summary>
     [Table("Ask_DataFTOut")]
-    public class Ask_DataFTOut
+    public class Ask_DataFTOut : IDataFTEntity, ITimeoutBindable
     {
         [Key]
         public int ID { get; set; }
@@ -130,6 +130,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 供应商
         /// </summary>
+        [StringLength(100)]
         public string? Supplier { get; set; }
         
         /// <summary>

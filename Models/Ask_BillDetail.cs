@@ -18,7 +18,7 @@ namespace ZKLT25.API.Models
         public string? Type { get; set; }
         
         /// <summary>
-        /// 版本
+        /// 型号
         /// </summary>
         public string? Version { get; set; }
         
@@ -38,17 +38,17 @@ namespace ZKLT25.API.Models
         public string? PN { get; set; }
         
         /// <summary>
-        /// 连接
+        /// 连接标准
         /// </summary>
         public string? LJ { get; set; }
         
         /// <summary>
-        /// 阀盖
+        /// 上阀盖标准
         /// </summary>
         public string? FG { get; set; }
         
         /// <summary>
-        /// 阀体
+        /// 阀体材质
         /// </summary>
         public string? FT { get; set; }
         
@@ -78,32 +78,32 @@ namespace ZKLT25.API.Models
         public string? CGPriceMemo { get; set; }
         
         /// <summary>
-        /// 采购备注
+        /// 采购员备注
         /// </summary>
         public string? CGMemo { get; set; }
         
         /// <summary>
-        /// 订单介质
+        /// 介质
         /// </summary>
         public string? ordMed { get; set; }
         
         /// <summary>
-        /// 订单KV值
+        /// KV值
         /// </summary>
         public string? OrdKV { get; set; }
         
         /// <summary>
-        /// 订单法兰
+        /// 法兰
         /// </summary>
         public string? ordFW { get; set; }
         
         /// <summary>
-        /// 订单泄漏
+        /// 泄漏等级
         /// </summary>
         public string? ordLeak { get; set; }
         
         /// <summary>
-        /// 订单驱动
+        /// 气源压力
         /// </summary>
         public string? ordQY { get; set; }
         

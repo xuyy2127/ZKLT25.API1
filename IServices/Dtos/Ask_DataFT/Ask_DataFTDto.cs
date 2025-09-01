@@ -27,7 +27,7 @@
         /// 单价（billprice
         /// </summary>
         public double? Price { get; set; }
-                /// <summary>
+        /// <summary>
         /// 基础价
         /// </summary>
         public double? BasicsPrice { get; set; }
@@ -64,9 +64,14 @@
         /// </summary>
         public string? OrdFG { get; set; }
         /// <summary>
-        /// 阀体材质
-        /// </summary>
-        public string? OrdFT { get; set; }
+        /// 阀体材质
+        /// </summary>
+        public string? OrdFT { get; set; }
+        
+        /// <summary>
+        /// 阀体材质ID（对应Ask_FTList.ID）
+        /// </summary>
+        public int? FTTypeId { get; set; }
         /// <summary>
         /// 阀内件材质
         /// </summary>
