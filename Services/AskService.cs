@@ -4,6 +4,7 @@ using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using System.Linq.Expressions;
 using ZKLT25.API.EntityFrameworkCore;
 using ZKLT25.API.Helper;
 using ZKLT25.API.IServices;
@@ -14,7 +15,44 @@ namespace ZKLT25.API.Services
 {
     public class AskService : IAskService
     {
-        #region 构造函数与常量 (Constructor & Constants)
+        #region 配置接口与类
+
+        /// <summary>
+        /// 数据迁移配置接口
+        /// </summary>
+        private interface IMigrationConfig
+        {
+            string ActiveTable { get; }
+            string ExpiredTable { get; }
+            string Columns { get; }
+            string EntityTypeName { get; }
+        }
+
+        /// <summary>
+        /// 阀体数据迁移配置
+        /// </summary>
+        private class FTMigrationConfig : IMigrationConfig
+        {
+            public string ActiveTable => "Ask_DataFT";
+            public string ExpiredTable => "Ask_DataFTOut";
+            public string Columns => "Source, AskDate, AskProjName, OrdNum, OrdMed, OrdName, OrdVersion, OrdDN, OrdPN, OrdLJ, OrdFG, OrdFT, OrdFNJ, OrdTL, OrdKV, OrdFlow, OrdLeak, OrdQYDY, OrdUnit, Num, Memo, AskRequire, Price, Supplier, ProjDay, Day1, Day2, Day3, Memo1, PriceRatio, BillDetailID, IsPreProBind, Timeout";
+            public string EntityTypeName => DataTypeValve;
+        }
+
+        /// <summary>
+        /// 附件数据迁移配置
+        /// </summary>
+        private class FJMigrationConfig : IMigrationConfig
+        {
+            public string ActiveTable => "Ask_DataFJ";
+            public string ExpiredTable => "Ask_DataFJOut";
+            public string Columns => "Source, AskDate, AskProjName, FJType, FJVersion, Unit, Num, Price, Supplier, ProjDay, Day1, Day2, Day3, Memo1, Memo, PriceRatio, BillDetailID, DN, PN, OrdLJ, IsPreProBind, Timeout";
+            public string EntityTypeName => DataTypeAccessory;
+        }
+
+        #endregion
+
+        #region 构造函数与常量
 
         // 常量定义，避免魔术字符串
         private const string DataTypeValve = "阀体";
@@ -43,9 +81,9 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 1. 基础数据与配置 (Master Data & Configuration)
+        #region 1. 基础数据与配置
 
-        #region 1.1. 产品与物料维护 (Product & Material Maintenance)
+        #region 1.1. 产品与物料维护
 
         /// <summary>
         /// 分页查询阀体型号列表
@@ -298,7 +336,7 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 1.2. 供应商维护 (Supplier Maintenance)
+        #region 1.2. 供应商维护
 
         /// <summary>
         /// 分页查询供应商信息
@@ -440,7 +478,7 @@ namespace ZKLT25.API.Services
 
          #endregion
 
-        #region 1.3. 供应关系配置 (Sourcing Rules Configuration)
+        #region 1.3. 供应关系配置
 
         /// <summary>
         /// 获取供应商附件配置页面数据
@@ -469,33 +507,34 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 批量更新供应商附件配置
+        /// 通用批量更新供应商配置方法
         /// </summary>
-        public async Task<ResultModel<bool>> BatchUpdateSPFJAsync(int supplierId, List<string> suppliedFJTypes)
+        private async Task<ResultModel<bool>> BatchUpdateSupplierConfigAsync<TEntity, TItem>(
+            int supplierId,
+            List<TItem> suppliedItems,
+            Expression<Func<TEntity, bool>> supplierFilter,
+            Func<TItem, TEntity> entityFactory) 
+            where TEntity : class
         {
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                //  删除该供应商的所有现有配置
-                var existingConfigs = await _db.Ask_SuppRangeFJ
-                    .Where(x => x.SuppID == supplierId)
+                // 删除该供应商的所有现有配置
+                var existingConfigs = await _db.Set<TEntity>()
+                    .AsQueryable()
+                    .Where(supplierFilter)
                     .ToListAsync();
                 
                 if (existingConfigs.Any())
                 {
-                    _db.Ask_SuppRangeFJ.RemoveRange(existingConfigs);
+                    _db.Set<TEntity>().RemoveRange(existingConfigs);
                 }
 
                 // 新增选中的配置
-                if (suppliedFJTypes.Any())
+                if (suppliedItems.Any())
                 {
-                    var newConfigs = suppliedFJTypes.Select(fjType => new Ask_SuppRangeFJ
-                    {
-                        SuppID = supplierId,
-                        FJType = fjType
-                    }).ToList();
-
-                    await _db.Ask_SuppRangeFJ.AddRangeAsync(newConfigs);
+                    var newConfigs = suppliedItems.Select(entityFactory).ToList();
+                    await _db.Set<TEntity>().AddRangeAsync(newConfigs);
                 }
 
                 await _db.SaveChangesAsync();
@@ -507,6 +546,22 @@ namespace ZKLT25.API.Services
                 await transaction.RollbackAsync();
                 return ResultModel<bool>.Error($"更新失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 批量更新供应商附件配置
+        /// </summary>
+        public async Task<ResultModel<bool>> BatchUpdateSPFJAsync(int supplierId, List<string> suppliedFJTypes)
+        {
+            return await BatchUpdateSupplierConfigAsync<Ask_SuppRangeFJ, string>(
+                supplierId,
+                suppliedFJTypes,
+                x => x.SuppID == supplierId,
+                fjType => new Ask_SuppRangeFJ
+                {
+                    SuppID = supplierId,
+                    FJType = fjType
+                });
         }
 
         /// <summary>
@@ -543,46 +598,21 @@ namespace ZKLT25.API.Services
         /// </summary>
         public async Task<ResultModel<bool>> BatchUpdateSPFTAsync(int supplierId, List<SPFTItem> suppliedFTItems, string? currentUser)
         {
-            using var transaction = await _db.Database.BeginTransactionAsync();
-            try
-            {
-                // 删除该供应商的所有现有配置
-                var existingConfigs = await _db.Ask_SuppRangeFT
-                    .Where(x => x.SuppID == supplierId)
-                    .ToListAsync();
-                
-                if (existingConfigs.Any())
+            return await BatchUpdateSupplierConfigAsync<Ask_SuppRangeFT, SPFTItem>(
+                supplierId,
+                suppliedFTItems,
+                x => x.SuppID == supplierId,
+                item => new Ask_SuppRangeFT
                 {
-                    _db.Ask_SuppRangeFT.RemoveRange(existingConfigs);
-                }
-
-                // 新增选中的配置
-                if (suppliedFTItems.Any())
-                {
-                    var newConfigs = suppliedFTItems.Select(item => new Ask_SuppRangeFT
-                    {
-                        SuppID = supplierId,
-                        FTID = item.FTID,
-                        lv = item.Lv
-                    }).ToList();
-
-                    await _db.Ask_SuppRangeFT.AddRangeAsync(newConfigs);
-                }
-
-                await _db.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return ResultModel<bool>.Ok(true);
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return ResultModel<bool>.Error($"更新失败: {ex.Message}");
-            }
+                    SuppID = supplierId,
+                    FTID = item.FTID,
+                    lv = item.Lv
+                });
         }
 
         #endregion
 
-        #region 1.4. 采购成本库 (Purchase Cost Library)
+        #region 1.4. 采购成本库
 
         /// <summary>
         /// 分页查询采购成本列表
@@ -737,9 +767,9 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 2. 核心询价流程 (Core Inquiry Process)
+        #region 2. 核心询价流程
 
-        #region 2.1. 询价单据管理 (Inquiry Bill Management)
+        #region 2.1. 询价单据管理
 
         /// <summary>
         /// 获取询价分页数据
@@ -919,8 +949,7 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 2.2. 价格与备注录入 (Pricing & Remark Entry)
-
+        #region 2.2. 价格与备注录入
         /// <summary>
         /// 录入价格备注
         /// </summary>
@@ -936,12 +965,11 @@ namespace ZKLT25.API.Services
             {
                 // 步骤1: 获取和验证数据
                 var targetDetails = await GetAndValidateTargetDetails(cto.BillDetailIDs);
-                var supplierIdStr = cto.SuppID?.ToString();
                 var timeout = -(cto.ValidityDays ?? DefaultNewPriceValidityDays);
                 var isPreProBind = cto.IsPreProBind ?? 0;
 
                 // 步骤2: 获取数据仓库表数据
-                var (dataFTList, dataFTOutList, dataFJList, dataFJOutList) = await GetDataWarehouseData(targetDetails, supplierIdStr);
+                var (dataFTList, dataFTOutList, dataFJList, dataFJOutList) = await GetDataWarehouseData(targetDetails, cto.SuppID);
 
                 // 步骤3: 更新价格和明细状态
                 await UpdatePricesAndDetails(targetDetails, cto, currentUser);
@@ -1003,17 +1031,17 @@ namespace ZKLT25.API.Services
             var attachmentIds = targetDetails.Where(x => x.Type != DataTypeValve).Select(x => x.ID).ToList();
 
             var dataFTList = valveBodyIds.Any()
-                ? await _db.Ask_DataFT.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                ? await _db.Ask_DataFT.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierId).ToListAsync()
                 : new List<Ask_DataFT>();
             var dataFTOutList = valveBodyIds.Any()
-                ? await _db.Ask_DataFTOut.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                ? await _db.Ask_DataFTOut.Where(x => valveBodyIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierId).ToListAsync()
                 : new List<Ask_DataFTOut>();
 
             var dataFJList = attachmentIds.Any()
-                ? await _db.Ask_DataFJ.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                ? await _db.Ask_DataFJ.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierId).ToListAsync()
                 : new List<Ask_DataFJ>();
             var dataFJOutList = attachmentIds.Any()
-                ? await _db.Ask_DataFJOut.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierIdStr).ToListAsync()
+                ? await _db.Ask_DataFJOut.Where(x => attachmentIds.Contains(x.BillDetailID.Value) && x.Supplier == supplierId).ToListAsync()
                 : new List<Ask_DataFJOut>();
 
             return (dataFTList, dataFTOutList, dataFJList, dataFJOutList);
@@ -1123,58 +1151,25 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 3. 数据查询与分析 (Data Query & Analysis)
+        #region 3. 价格查询与日志
 
-        #region 3.1. 历史价格查询 (Historical Price Query)
+        #region 3.1. 历史价格查询
 
         /// <summary>
         /// 分页查阀体价格
         /// </summary>
         public async Task<ResultModel<PaginationList<Ask_DataFTDto>>> GetDataFTPagedListAsync(Ask_DataFTQto qto)
         {
-            try
-            {
-                // 获取 FT 类型映射，避免子查询
-                var ftTypeMapping = await GetFTTypeIdMappingAsync();
+            // 预加载阀体类型映射
+            var ftTypeMapping = await GetFTTypeIdMappingAsync();
 
-                IQueryable<Ask_DataFTDto> query;
-                
-                // 根据过期状态筛选确定查询哪张表
-                if (qto.IsExpired.HasValue)
-                {
-                    if (qto.IsExpired.Value)
-                    {
-                        query = BuildDataFTExpiredQuery(ftTypeMapping);
-                    }
-                    else
-                    {
-                        query = BuildDataFTActiveQuery(ftTypeMapping);
-                    }
-                }
-                else
-                {
-                    // 显示全部数据：合并两张表
-                    var activeQuery = BuildDataFTActiveQuery(ftTypeMapping);
-                    var expiredQuery = BuildDataFTExpiredQuery(ftTypeMapping);
-                    query = activeQuery.Union(expiredQuery);
-                }
-
-                // 应用其他筛选条件
-                query = ApplyFTFilters(query, qto, false);
-                query = ApplySorting(query);
-
-                // 分页
-                var pagedResult = await PaginateAsync(qto.PageNumber, qto.PageSize, query);
-
-                // 装饰派生显示字段
-                DecorateDataList(pagedResult);
-                
-                return ResultModel<PaginationList<Ask_DataFTDto>>.Ok(pagedResult);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<PaginationList<Ask_DataFTDto>>.Error($"查询失败：{ex.Message}");
-            }
+            // 调用通用查询引擎，传参
+            return await GetUniversalPagedDataAsync<Ask_DataFTDto, Ask_DataFTQto>(
+                qto,
+                activeQueryBuilder:  () => BuildDataFTActiveQuery(ftTypeMapping),
+                expiredQueryBuilder: () => BuildDataFTExpiredQuery(ftTypeMapping),
+                applyFilters:        (query, currentQto) => ApplyFTFilters(query, currentQto)
+            );
         }
 
         /// <summary>
@@ -1182,49 +1177,16 @@ namespace ZKLT25.API.Services
         /// </summary>
         public async Task<ResultModel<PaginationList<Ask_DataFJDto>>> GetDataFJPagedListAsync(Ask_DataFJQto qto)
         {
-            try
-            {
-                // 预加载附件类型ID映射（带缓存）
-                var fjTypeMapping = await GetFJTypeIdMappingAsync();
-
-                // 根据过期状态筛选确定查询哪张表
-                IQueryable<Ask_DataFJDto> query;
-                
-                if (qto.IsExpired.HasValue)
-                {
-                    if (qto.IsExpired.Value)
-                    {
-                        query = BuildDataFJExpiredQuery(fjTypeMapping);
-                    }
-                    else
-                    {
-                        query = BuildDataFJActiveQuery(fjTypeMapping);
-                    }
-                }
-                else
-                {
-                    // 显示全部数据：合并两张表
-                    var activeQuery = BuildDataFJActiveQuery(fjTypeMapping);
-                    var expiredQuery = BuildDataFJExpiredQuery(fjTypeMapping);
-                    query = activeQuery.Union(expiredQuery);
-                }
-
-                // 应用其他筛选条件
-                query = ApplyFJFilters(query, qto, false);
-                query = ApplySorting(query);
-
-                // 分页
-                var pagedResult = await PaginateAsync(qto.PageNumber, qto.PageSize, query);
-                
-                // 装饰派生显示字段
-                DecorateDataList(pagedResult);
-                
-                return ResultModel<PaginationList<Ask_DataFJDto>>.Ok(pagedResult);
-            }
-            catch (Exception ex)
-            {
-                return ResultModel<PaginationList<Ask_DataFJDto>>.Error($"查询失败：{ex.Message}");
-            }
+            // 预加载附件类型映射
+            var fjTypeMapping = await GetFJTypeIdMappingAsync();
+            
+            // 调用通用查询引擎，传参
+            return await GetUniversalPagedDataAsync<Ask_DataFJDto, Ask_DataFJQto>(
+                qto,
+                activeQueryBuilder:  () => BuildDataFJActiveQuery(fjTypeMapping),
+                expiredQueryBuilder: () => BuildDataFJExpiredQuery(fjTypeMapping),
+                applyFilters:        (query, currentQto) => ApplyFJFilters(query, currentQto)
+            );
         }
 
         /// <summary>
@@ -1244,7 +1206,7 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 3.2. 日志查询 (Log Query)
+        #region 3.2. 日志查询
 
         /// <summary>
         /// 分页查询阀体 / 附件日志
@@ -1303,9 +1265,9 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 4. 数据导入导出 (Data Exchange)
+        #region 4. 数据导入导出
 
-        #region 4.1. 导出 (Export)
+        #region 4.1. 导出
 
         /// <summary>
         /// 导出附件询价数据为 Excel 文件
@@ -1458,7 +1420,7 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 4.2. 导入 (Import)
+        #region 4.2. 导入
 
         /// <summary>
         /// 导入采购成本数据Excel文件
@@ -1566,9 +1528,9 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 5. 内部帮助方法 (Private Helpers)
+        #region 5. 内部帮助方法
 
-        #region 5.1. 通用业务逻辑 (Common Business Logic)
+        #region 5.1. 通用业务逻辑
 
         /// <summary>
         /// 通用的数据状态变更处理
@@ -1596,18 +1558,27 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
+        /// 通用数据迁移方法（基于配置）
+        /// </summary>
+        private async Task<ResultModel<bool>> MigrateDataAsync<TConfig>(
+            List<int> ids, 
+            bool fromExpired, 
+            string? currentUser, 
+            TConfig config) where TConfig : IMigrationConfig
+        {
+            string sourceTable = fromExpired ? config.ExpiredTable : config.ActiveTable;
+            string targetTable = fromExpired ? config.ActiveTable : config.ExpiredTable;
+            
+            return await MigrateEntityAsync(ids, fromExpired, currentUser, sourceTable, targetTable, config.Columns, config.EntityTypeName);
+        }
+
+        /// <summary>
         /// 迁移阀体数据
         /// </summary>
         private async Task<ResultModel<bool>> MigrateDataFTAsync(List<int> ids, bool fromExpired, string? currentUser)
         {
-            string sourceTable = fromExpired ? "Ask_DataFTOut" : "Ask_DataFT";
-            string targetTable = fromExpired ? "Ask_DataFT" : "Ask_DataFTOut";
-
-            // ！！！重要！！！
-            // 如果修改了 Ask_DataFT 或 Ask_DataFTOut 实体，必须手动同步更新下面的字段列表！
-            string columns = "Source, AskDate, AskProjName, OrdNum, OrdMed, OrdName, OrdVersion, OrdDN, OrdPN, OrdLJ, OrdFG, OrdFT, OrdFNJ, OrdTL, OrdKV, OrdFlow, OrdLeak, OrdQYDY, OrdUnit, Num, Memo, AskRequire, Price, Supplier, ProjDay, Day1, Day2, Day3, Memo1, PriceRatio, BillDetailID, IsPreProBind, Timeout";
-            
-            return await MigrateEntityAsync(ids, fromExpired, currentUser, sourceTable, targetTable, columns, DataTypeValve);
+            var config = new FTMigrationConfig();
+            return await MigrateDataAsync(ids, fromExpired, currentUser, config);
         }
 
         /// <summary>
@@ -1615,14 +1586,8 @@ namespace ZKLT25.API.Services
         /// </summary>
         private async Task<ResultModel<bool>> MigrateDataFJAsync(List<int> ids, bool fromExpired, string? currentUser)
         {
-            string sourceTable = fromExpired ? "Ask_DataFJOut" : "Ask_DataFJ";
-            string targetTable = fromExpired ? "Ask_DataFJ" : "Ask_DataFJOut";
-
-            // ！！！重要！！！
-            // 如果修改了 Ask_DataFJ 或 Ask_DataFJOut 实体，必须手动同步更新下面的字段列表！
-            string columns = "Source, AskDate, AskProjName, FJType, FJVersion, Unit, Num, Price, Supplier, ProjDay, Day1, Day2, Day3, Memo1, Memo, PriceRatio, BillDetailID, DN, PN, OrdLJ, IsPreProBind, Timeout";
-            
-            return await MigrateEntityAsync(ids, fromExpired, currentUser, sourceTable, targetTable, columns, DataTypeAccessory);
+            var config = new FJMigrationConfig();
+            return await MigrateDataAsync(ids, fromExpired, currentUser, config);
         }
 
         /// <summary>
@@ -1644,28 +1609,36 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 延长数据有效期
         /// </summary>
-        private async Task<ResultModel<bool>> ExtendDataTimeoutAsync(List<int> ids, int extendDays, string? currentUser, string entityType)
+        private async Task<ResultModel<bool>> ExtendDataTimeoutAsync<TEntity>(
+            List<int> ids, 
+            int extendDays, 
+            string? currentUser) where TEntity : class, IEntityWithId, ITimeoutBindable
         {
             try
             {
-                switch (entityType.ToUpper())
-                {
-                    case EntityTypeDataFT:
-                        await ExtendEntityTimeoutAsync<Ask_DataFT>(ids, extendDays, currentUser);
-                        break;
-                    case EntityTypeDataFJ:
-                        await ExtendEntityTimeoutAsync<Ask_DataFJ>(ids, extendDays, currentUser);
-                        break;
-                    default:
-                        return ResultModel<bool>.Error("无效的实体类型");
-                }
-
+                await ExtendEntityTimeoutAsync<TEntity>(ids, extendDays, currentUser);
                 await _db.SaveChangesAsync(); // 在所有实体更新后，一次性保存
                 return ResultModel<bool>.Ok(true);
             }
             catch (Exception ex)
             {
                 return ResultModel<bool>.Error($"延长有效期失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 延长数据有效期（基于实体类型字符串）
+        /// </summary>
+        private async Task<ResultModel<bool>> ExtendDataTimeoutAsync(List<int> ids, int extendDays, string? currentUser, string entityType)
+        {
+            switch (entityType.ToUpper())
+            {
+                case EntityTypeDataFT:
+                    return await ExtendDataTimeoutAsync<Ask_DataFT>(ids, extendDays, currentUser);
+                case EntityTypeDataFJ:
+                    return await ExtendDataTimeoutAsync<Ask_DataFJ>(ids, extendDays, currentUser);
+                default:
+                    return ResultModel<bool>.Error("无效的实体类型");
             }
         }
         
@@ -1684,7 +1657,7 @@ namespace ZKLT25.API.Services
                 return ResultModel<bool>.Error("请选择要更新的记录");
             }
 
-            var entities = await _db.Set<TEntity>().Where(x => ids.Contains(x.ID)).ToListAsync();
+            var entities = await _db.Set<TEntity>().AsQueryable().Where(x => ids.Contains(x.ID)).ToListAsync();
             if (!entities.Any())
             {
                 return ResultModel<bool>.Error("未找到要更新的记录");
@@ -1713,7 +1686,7 @@ namespace ZKLT25.API.Services
         }
 
         /// <summary>
-        /// 通用数据迁移方法（使用原生SQL优化性能）
+        /// 通用数据迁移方法
         /// </summary>
         private async Task<ResultModel<bool>> MigrateEntityAsync(
             List<int> ids,
@@ -1789,7 +1762,7 @@ namespace ZKLT25.API.Services
         private async Task<ResultModel<bool>> ExtendEntityTimeoutAsync<T>(List<int> ids, int extendDays, string? currentUser)
             where T : class, IEntityWithId, ITimeoutBindable
         {
-            var entities = await _db.Set<T>().Where(x => ids.Contains(x.ID)).ToListAsync();
+            var entities = await _db.Set<T>().AsQueryable().Where(x => ids.Contains(x.ID)).ToListAsync();
             foreach (var entity in entities)
             {
                 var currentTimeout = entity.Timeout ?? 0;
@@ -1802,7 +1775,7 @@ namespace ZKLT25.API.Services
         
         #endregion
 
-        #region 5.2. 通用查询构建 (Common Query Builders)
+        #region 5.2. 通用查询构建
 
         /// <summary>
         /// 按数据状态选择（true=未过期，false=已过期，null=合并显示）
@@ -1817,7 +1790,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 阀体价格查询：应用筛选条件
         /// </summary>
-        private static IQueryable<Ask_DataFTDto> ApplyFTFilters(IQueryable<Ask_DataFTDto> query, Ask_DataFTQto qto, bool includeExpiredFilter = true)
+        private static IQueryable<Ask_DataFTDto> ApplyFTFilters(IQueryable<Ask_DataFTDto> query, Ask_DataFTQto qto)
         {
             // 使用扩展方法简化筛选逻辑
             query = query.ApplyDateRangeFilter(x => x.AskDate, qto.StartDate, qto.EndDate);
@@ -1852,7 +1825,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 附件价格查询：应用筛选条件
         /// </summary>
-        private static IQueryable<Ask_DataFJDto> ApplyFJFilters(IQueryable<Ask_DataFJDto> query, Ask_DataFJQto qto, bool includeExpiredFilter = true)
+        private static IQueryable<Ask_DataFJDto> ApplyFJFilters(IQueryable<Ask_DataFJDto> query, Ask_DataFJQto qto)
         {
             // 使用扩展方法简化筛选逻辑
             query = query.ApplyDateRangeFilter(x => x.AskDate, qto.StartDate, qto.EndDate);
@@ -1885,7 +1858,7 @@ namespace ZKLT25.API.Services
         private IQueryable<Ask_DataFTDto> BuildDataFTBaseQuery(IQueryable<IDataFTEntity> dataSource, Dictionary<string, int> ftTypeMapping, int isInvalid)
         {
             var query = from d in dataSource
-                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                                  join supplier in _db.Ask_Supplier on d.Supplier equals supplier.ID into supplierGroup
                                   from supplier in supplierGroup.DefaultIfEmpty()
                                   join billPrice in _db.Ask_BillPrice on d.BillDetailID equals billPrice.BillDetailID into priceGroup
                                   from billPrice in priceGroup.DefaultIfEmpty()
@@ -1960,7 +1933,7 @@ namespace ZKLT25.API.Services
             var query = from d in dataSource
                         join billDetail in _db.Ask_BillDetail.AsNoTracking() on d.BillDetailID equals billDetail.ID
                         join bill in _db.Ask_Bill.AsNoTracking() on billDetail.BillID equals bill.BillID
-                        join supplier in _db.Ask_Supplier.AsNoTracking() on d.Supplier equals supplier.ID.ToString() into supplierGroup
+                        join supplier in _db.Ask_Supplier.AsNoTracking() on d.Supplier equals supplier.ID into supplierGroup
                                   from supplier in supplierGroup.DefaultIfEmpty()
                                   join bp in (
                             from p in _db.Ask_BillPrice.AsNoTracking()
@@ -2020,7 +1993,7 @@ namespace ZKLT25.API.Services
 
         #endregion
 
-        #region 5.3. 通用工具 (Common Utilities)
+        #region 5.3. 通用工具
 
         /// <summary>
         /// 记录修改日志
@@ -2401,6 +2374,64 @@ namespace ZKLT25.API.Services
             using var stream = new MemoryStream();
             workbook.Save(stream, SaveFormat.Xlsx);
             return stream.ToArray();
+        }
+
+        #endregion
+
+        #region 5.4. 通用查询引擎
+
+        /// <summary>
+        /// 通用价格数据分页查询方法
+        /// </summary>
+        /// <typeparam name="TDto">返回的DTO类型 (必须实现 IDataItemDto)</typeparam>
+        /// <typeparam name="TQto">查询参数类型 (必须实现 IPriceDataQto)</typeparam>
+        /// <param name="qto">查询参数对象</param>
+        /// <param name="activeQueryBuilder">一个"委托"，用来构建"有效数据"的查询 (返回 IQueryable<TDto>)</param>
+        /// <param name="expiredQueryBuilder">一个"委托"，用来构建"过期数据"的查询</param>
+        /// <param name="applyFilters">一个"委托"，用来应用所有筛选条件</param>
+        /// <returns>标准分页结果</returns>
+        private async Task<ResultModel<PaginationList<TDto>>> GetUniversalPagedDataAsync<TDto, TQto>(
+            TQto qto,
+            Func<IQueryable<TDto>> activeQueryBuilder,
+            Func<IQueryable<TDto>> expiredQueryBuilder,
+            Func<IQueryable<TDto>, TQto, IQueryable<TDto>> applyFilters)
+            where TDto : class, IDataItemDto // 泛型约束
+            where TQto : class, IPriceDataQto
+        {
+            try
+            {
+                IQueryable<TDto> query;
+
+                //根据 IsExpired 状态组合查询
+                if (qto.IsExpired.HasValue)
+                {
+                    query = qto.IsExpired.Value 
+                        ? expiredQueryBuilder() 
+                        : activeQueryBuilder();
+                }
+                else
+                {
+                    var activeQuery = activeQueryBuilder();
+                    var expiredQuery = expiredQueryBuilder();
+                    query = activeQuery.Union(expiredQuery);
+                }
+
+                // 应用所有筛选条件
+                query = applyFilters(query, qto);
+
+                //排序、分页、装饰
+                query = ApplySorting(query); // 复用已有的通用排序
+                var pagedResult = await PaginateAsync(qto.PageNumber, qto.PageSize, query); // 复用已有的通用分页
+
+                DecorateDataList(pagedResult); 
+                
+                return ResultModel<PaginationList<TDto>>.Ok(pagedResult);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "通用价格数据查询失败: DTO={DtoType}", typeof(TDto).Name);
+                return ResultModel<PaginationList<TDto>>.Error($"查询失败：{ex.Message}");
+            }
         }
 
         #endregion

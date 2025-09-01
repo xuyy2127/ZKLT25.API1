@@ -2,7 +2,7 @@
 
 namespace ZKLT25.API.IServices.Dtos
 {
-    public class Ask_DataFTQto : BasePageParams
+    public class Ask_DataFTQto : BasePageParams, IPriceDataQto
     {
         /// <summary>
         /// 交期编号
@@ -32,7 +32,7 @@ namespace ZKLT25.API.IServices.Dtos
         /// 公称压力
         /// </summary>
         public string? OrdPN { get; set; }
-                /// <summary>
+        /// <summary>
         /// 阀体材质
         /// </summary>
         public string? OrdFT { get; set; }

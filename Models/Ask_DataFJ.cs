@@ -59,8 +59,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 供应商
         /// </summary>
-        [StringLength(100)]
-        public string? Supplier { get; set; }
+        public int? Supplier { get; set; }
         
         /// <summary>
         /// 项目天数

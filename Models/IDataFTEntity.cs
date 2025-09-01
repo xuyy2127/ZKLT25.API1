@@ -7,7 +7,6 @@ namespace ZKLT25.API.Models
     public interface IDataFTEntity : IEntityWithId
     {
         // 基础属性
-        // ID 已从 IEntityWithId 继承，无需重复定义
         string? Source { get; set; }
         DateTime? AskDate { get; set; }
         string? AskProjName { get; set; }
@@ -36,7 +35,7 @@ namespace ZKLT25.API.Models
         string? Memo1 { get; set; }
         
         // 关联属性
-        string? Supplier { get; set; }
+        int? Supplier { get; set; }
         int? BillDetailID { get; set; }
     }
 }

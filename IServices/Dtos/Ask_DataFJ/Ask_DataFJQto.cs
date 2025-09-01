@@ -2,7 +2,7 @@ using ZKLT25.API.Helper;
 
 namespace ZKLT25.API.IServices.Dtos
 {
-    public class Ask_DataFJQto : BasePageParams
+    public class Ask_DataFJQto : BasePageParams, IPriceDataQto
     {
         /// <summary>
         /// 交期编号

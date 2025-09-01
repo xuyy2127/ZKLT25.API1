@@ -48,7 +48,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 供应商
         /// </summary>
-        string? Supplier { get; set; }
+        int? Supplier { get; set; }
         
         /// <summary>
         /// 项目天数
