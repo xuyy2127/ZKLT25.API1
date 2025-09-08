@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ZKLT25.API.Models.Interfaces;
 
 namespace ZKLT25.API.Models
 {
@@ -180,6 +181,6 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 超时
         /// </summary>
-        public int? Timeout { get; set; } = -1;
+        public int? Timeout { get; set; } = -365;
     }
 }

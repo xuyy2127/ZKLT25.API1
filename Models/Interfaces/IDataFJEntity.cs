@@ -1,4 +1,4 @@
-namespace ZKLT25.API.Models
+namespace ZKLT25.API.Models.Interfaces
 {
     /// <summary>
     /// 附件数据实体接口（Ask_DataFJ 和 Ask_DataFJOut 的公共属性）

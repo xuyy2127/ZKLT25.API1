@@ -40,17 +40,17 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 价格比例
         /// </summary>
-        public float? PriceRatio { get; set; }
+        public double? PriceRatio { get; set; }
         
         /// <summary>
         /// 基础价格
         /// </summary>
-        public float? BasicsPrice { get; set; } = 0;
+        public double? BasicsPrice { get; set; } = 0;
         
         /// <summary>
         /// 附加价格
         /// </summary>
-        public float? AddPrice { get; set; } = 0;
+        public double? AddPrice { get; set; } = 0;
         
         /// <summary>
         /// 备注

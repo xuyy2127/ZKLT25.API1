@@ -14,33 +14,22 @@ namespace ZKLT25.API.IServices.Dtos
         public List<int> BillDetailIDs { get; set; } = new List<int>();
         
         /// <summary>
-        /// 价格
+        /// 基础价格
         /// </summary>
-        [Required(ErrorMessage = "价格不能为空")]
-        [Range(0.01, double.MaxValue, ErrorMessage = "价格必须大于0")]
-        public double Price { get; set; }
-        
+        [Required(ErrorMessage = "基础价格不能为空")]
+        [Range(0.01, double.MaxValue, ErrorMessage = "输入的价格必须大于0")]
+        public double BasicsPrice { get; set; }
+
         /// <summary>
-        /// 数量
+        /// 附加价格
         /// </summary>
-        [Range(0.01, double.MaxValue, ErrorMessage = "数量必须大于0")]
-        public double? Num { get; set; }
-        
+        public double? AddPrice { get; set; }
+
         /// <summary>
         /// 供应商ID
         /// </summary>
         public int? SuppID { get; set; }
-        
-        /// <summary>
-        /// 基础价格
-        /// </summary>
-        public float? BasicsPrice { get; set; }
-        
-        /// <summary>
-        /// 附加价格
-        /// </summary>
-        public float? AddPrice { get; set; }
-        
+
         /// <summary>
         /// 报价回复备注（Ask_BillPrice表）
         /// </summary>
@@ -48,11 +37,17 @@ namespace ZKLT25.API.IServices.Dtos
         public string? Remarks { get; set; }
         
         /// <summary>
-        /// 采购员备注（Ask_BillDetail表）
+        /// 报价备注（Ask_BillDetail表）
+        /// </summary>
+        [StringLength(1000, ErrorMessage = "报价备注长度不能超过1000个字符")]
+        public string? CGPriceMemo { get; set; }
+
+        /// <summary>
+        /// 采购员备注（Ask_BillDetail表 仅自己可见）
         /// </summary>
         [StringLength(1000, ErrorMessage = "采购员备注长度不能超过1000个字符")]
-        public string? CGPriceMemo { get; set; }
-        
+        public string? CGMemo { get; set; }
+
         /// <summary>
         /// 价格有效期（天数，可选）
         /// </summary>

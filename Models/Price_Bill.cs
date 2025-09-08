@@ -50,7 +50,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 价格总计
         /// </summary>
-        public float? PriceTotal { get; set; }
+        public double? PriceTotal { get; set; }
         
         /// <summary>
         /// 开票用户
@@ -120,7 +120,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 含税价格
         /// </summary>
-        public float? PriceHT { get; set; }
+        public double? PriceHT { get; set; }
         
         /// <summary>
         /// JSON数据

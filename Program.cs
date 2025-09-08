@@ -27,7 +27,7 @@ builder.Logging.ClearProviders();
 
 var logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
-    .Filter.ByExcluding(logEvent => logEvent.Exception != null)
+    //.Filter.ByExcluding(logEvent => logEvent.Exception != null)
     .CreateLogger();
 
 builder.Logging.AddSerilog(logger, dispose: true);
@@ -76,6 +76,13 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 });
+
+// 配置Kestrel服务器 监听端口
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(5266);
+});
+
 
 // 注册AutoMapper
 builder.Services.AddAutoMapper(cfg =>

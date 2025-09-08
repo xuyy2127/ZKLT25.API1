@@ -1,6 +1,6 @@
 namespace ZKLT25.API.IServices.Dtos
 {
-    public class Ask_BillDetailDto
+    public class Ask_BillDetailDto : IHasBillId
     {
         /// <summary>
         /// 主键ID
@@ -103,12 +103,12 @@ namespace ZKLT25.API.IServices.Dtos
         public string? Memo { get; set; }
 
         /// <summary>
-        /// 采购价格备注
+        /// 报价备注
         /// </summary>
         public string? CGPriceMemo { get; set; }
 
         /// <summary>
-        /// 采购员备注
+        /// 报价回复备注
         /// </summary>
         public string? Remarks { get; set; }
         
@@ -130,16 +130,30 @@ namespace ZKLT25.API.IServices.Dtos
         /// <summary>
         /// 基础价格（billprice）
         /// </summary>
-        public float? BasicsPrice { get; set; }
+        public double? BasicsPrice { get; set; }
         
         /// <summary>
         /// 附加价格（billprice）
         /// </summary>
-        public float? AddPrice { get; set; }
+        public double? AddPrice { get; set; }
         
         /// <summary>
         /// 开票用户（billprice）
         /// </summary>
         public string? KUser { get; set; }
+
+        /// <summary>
+        /// 询价单据ID
+        /// </summary>
+        public int? BillID { get; set; }
+
+        /// <summary>
+        /// 明细表文件名（来自 Ask_Bill.DocName）
+        /// </summary>
+        public string? DocName { get; set; }
+
+        public string DocPath { get; set; }    // 逻辑/相对路径
+
+        public string FilePath { get; set; }   // 可直接下载的 URL
     }
 }

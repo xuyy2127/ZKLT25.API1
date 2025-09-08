@@ -54,7 +54,7 @@ namespace ZKLT25.API.IServices.Dtos
         /// <summary>
         /// 供应商ID
         /// </summary>
-        public string? SuppId { get; set; }
+        public int? SuppId { get; set; }
 
         /// <summary>
         /// 供应商名称

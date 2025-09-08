@@ -163,6 +163,18 @@ namespace ZKLT25.API.Controllers
         }
 
         /// <summary>
+        /// 获取可选供应商列表：优先按 detailId 路由阀体/附件；否则按 fjType 作为附件类型查询
+        /// </summary>
+        /// <param name="detailId">询价明细ID（优先）</param>
+        /// <param name="fjType">当未提供 detailId 时，按该附件类型（FJType）查询</param>
+        /// <param name="suppNameKeyword">供应商名称模糊关键字（可选）</param>
+        [HttpGet("SupplierOptions")]
+        public async Task<ResultModel<List<Ask_SupplierDto>>> GetSupplierOptionsAsync([FromQuery] int? detailId, [FromQuery] string? fjType, [FromQuery] string? suppNameKeyword)
+        {
+            return await _service.GetSupplierOptionsAsync(detailId, fjType, suppNameKeyword);
+        }
+
+        /// <summary>
         /// 新增供应商信息
         /// </summary>
         /// <param name="cto">创建参数</param>
@@ -410,8 +422,7 @@ namespace ZKLT25.API.Controllers
         public async Task<ResultModel<int>> SetPriceRemarkAsync([FromForm] BillPriceCto cto)
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            
-            // 在控制器层处理文件，避免 IFormFile 渗透到服务层
+
             if (cto.QuoteFile != null && cto.BillDetailIDs.Any())
             {
                 return await _service.SetPriceRemarkAsync(cto, currentUser, cto.QuoteFile.FileName, cto.QuoteFile.OpenReadStream());

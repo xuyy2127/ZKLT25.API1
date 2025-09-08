@@ -128,6 +128,8 @@ namespace ZKLT25.API.IServices
         /// <returns></returns>
         Task<ResultModel<List<SPFJPageDto>>> GetSPFJPageAsync(int supplierId);
 
+
+
         /// <summary>
         /// 批量更新供应商附件配置
         /// </summary>
@@ -247,6 +249,15 @@ namespace ZKLT25.API.IServices
         Task<ResultModel<PaginationList<Ask_CGPriceValueDto>>> GetCGPagedListAsync(Ask_CGPriceValueQto qto);
 
         /// <summary>
+        /// 统一由 GetSuppliersAsync 对外提供；具体按FJ/FT的查询在服务内部复用私有方法
+        /// </summary>
+        /// <param name="detailId">询价明细ID（优先，如果提供则按明细自动分流到阀体或附件查询）</param>
+        /// <param name="type">当未提供 detailId 时，按该类型作为 FJType 查询附件供应商</param>
+        /// <param name="suppNameKeyword">供应商名称关键字（可选，用于模糊搜索）</param>
+        /// <returns>供应商列表（用于前端展示 SuppName，提交使用 ID）</returns>
+        Task<ResultModel<List<Ask_SupplierDto>>> GetSupplierOptionsAsync(int? detailId, string? fjType, string? suppNameKeyword = null);
+         
+        /// <summary>
         /// 创建采购成本记录
         /// </summary>
         /// <param name="cto">创建请求</param>
@@ -281,6 +292,16 @@ namespace ZKLT25.API.IServices
         /// <param name="file">Excel文件</param>
         /// <returns></returns>
         Task<ResultModel<ImportResult>> ImportCGExcelAsync(IFormFile file, bool isReplace = false);
+        #endregion
+
+        #region 明细表下载装饰
+        /// <summary>
+        /// 为结果集统一填充明细表下载相关字段（FilePath=/api/Common/DownloadFile，DocPath=/docs/{DocName}）。
+        /// 不改变查询，仅用于前端展示与下载对接。
+        /// </summary>
+        /// <typeparam name="T">DTO类型，需包含 BillID、DocPath、FilePath，可选择包含 DocName</typeparam>
+        /// <param name="items">结果集</param>
+        void DecorateBillDocLinks<T>(IEnumerable<T> items) where T : class;
         #endregion
 
     }

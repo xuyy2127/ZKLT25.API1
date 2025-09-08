@@ -45,11 +45,35 @@ namespace ZKLT25.API.Services
             CreateDataFJMapping<Ask_DataFJ>();
             CreateDataFJMapping<Ask_DataFJOut>();
 
+            // 用于“阀体”数据在有效表和过期表之间的迁移
+            CreateMap<Ask_DataFT, Ask_DataFTOut>();
+            CreateMap<Ask_DataFTOut, Ask_DataFT>();
+
+            // 用于“附件”数据在有效表和过期表之间的迁移
+            CreateMap<Ask_DataFJ, Ask_DataFJOut>();
+            CreateMap<Ask_DataFJOut, Ask_DataFJ>();
+
+
             // Ask_CGPriceValue 映射配置
             CreateMap<Ask_CGPriceValue, Ask_CGPriceValueDto>()
                 .ForMember(dest => dest.IsValid, opt => opt.MapFrom(src => src.ExpireTime == null || src.ExpireTime > DateTime.Now));
             CreateMap<Ask_CGPriceValueCto, Ask_CGPriceValue>();
             CreateMap<Ask_CGPriceValueUto, Ask_CGPriceValue>();
+
+            // 询价明细 -> 阀体/附件
+            CreateMap<Ask_BillDetail, Ask_DataFT>()
+                .ForMember(dest => dest.ID, opt => opt.Ignore())
+                .ForMember(dest => dest.BillDetailID, opt => opt.MapFrom(src => src.ID))
+                .ForMember(dest => dest.OrdVersion, opt => opt.MapFrom(src => src.Version))
+                .ForMember(dest => dest.OrdName, opt => opt.MapFrom(src => src.Name));
+
+            CreateMap<Ask_BillDetail, Ask_DataFJ>()
+                .ForMember(dest => dest.ID, opt => opt.Ignore())
+                .ForMember(dest => dest.BillDetailID, opt => opt.MapFrom(src => src.ID))
+                .ForMember(dest => dest.FJType, opt => opt.MapFrom(src => src.Type))
+                .ForMember(dest => dest.FJVersion, opt => opt.MapFrom(src => src.Version));
+
+            
         }
 
         /// <summary>

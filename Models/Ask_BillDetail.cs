@@ -65,7 +65,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 数量
         /// </summary>
-        public float? Num { get; set; }
+        public double? Num { get; set; }
         
         /// <summary>
         /// 状态
@@ -73,12 +73,12 @@ namespace ZKLT25.API.Models
         public int? State { get; set; }
         
         /// <summary>
-        /// 采购价格备注
+        /// 报价备注
         /// </summary>
         public string? CGPriceMemo { get; set; }
         
         /// <summary>
-        /// 采购员备注
+        /// 采购员备注（仅自己可见）
         /// </summary>
         public string? CGMemo { get; set; }
         
@@ -120,6 +120,6 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 超时
         /// </summary>
-        public int? Timeout { get; set; } = -1;
+        public int? Timeout { get; set; } = -365;
     }
 }

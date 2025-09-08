@@ -55,7 +55,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 数量
         /// </summary>
-        public float? Num { get; set; }
+        public double? Num { get; set; }
         
         /// <summary>
         /// ordMed
@@ -105,7 +105,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 供应商ID
         /// </summary>
-        public string? SuppId { get; set; }
+        public int? SuppId { get; set; }
         
         /// <summary>
         /// 价格ID

@@ -173,9 +173,9 @@
         /// </summary>
         public string? Memo1 { get; set; }
 
-        /// <summary>
-        /// 单据编号文本
-        /// </summary>
-        public string? BillIDText { get; set; }
+        public string DocPath { get; set; }    // 逻辑/相对路径
+        
+        public string FilePath { get; set; }   // 可直接下载的 URL
+
     }
 }

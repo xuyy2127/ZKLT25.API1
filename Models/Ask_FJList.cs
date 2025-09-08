@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ZKLT25.API.Models.Interfaces;
 
 namespace ZKLT25.API.Models
 {

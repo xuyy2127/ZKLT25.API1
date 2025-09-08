@@ -1,4 +1,4 @@
-namespace ZKLT25.API.Models
+namespace ZKLT25.API.Models.Interfaces
 {
     /// <summary>
     /// 具有比例属性的实体接口

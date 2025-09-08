@@ -1,4 +1,4 @@
-namespace ZKLT25.API.Models
+namespace ZKLT25.API.Models.Interfaces
 {
     /// <summary>
     /// 阀体数据实体共享接口

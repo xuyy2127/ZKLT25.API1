@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using ZKLT25.API.Models.Interfaces;
 
 namespace ZKLT25.API.Models
 {
@@ -125,7 +126,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 价格
         /// </summary>
-        public float? Price { get; set; }
+        public double? Price { get; set; }
         
         /// <summary>
         /// 供应商
@@ -170,7 +171,7 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 价格比例
         /// </summary>
-        public float? PriceRatio { get; set; }
+        public double? PriceRatio { get; set; }
         
         /// <summary>
         /// 账单详情ID
@@ -185,6 +186,6 @@ namespace ZKLT25.API.Models
         /// <summary>
         /// 超时
         /// </summary>
-        public int? Timeout { get; set; } = -1;
+        public int? Timeout { get; set; } = -365;
     }
 }
