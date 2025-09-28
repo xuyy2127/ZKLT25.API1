@@ -12,9 +12,7 @@ namespace ZKLT25.API.IServices.Dtos
         /// <summary>
         /// 基础价格
         /// </summary>
-        [Required(ErrorMessage = "基础价格不能为空")]
-        [Range(0.01, double.MaxValue, ErrorMessage = "基础价格必须大于0")]
-        public double Price { get; set; }
+        public double? Price { get; set; }
         
         /// <summary>
         /// 加价金额
@@ -22,12 +20,12 @@ namespace ZKLT25.API.IServices.Dtos
         public double? AddPrice { get; set; } = 0;
         
         /// <summary>
-        /// 口径（仅类型为"配对法兰及螺栓螺母"时可填写）
+        /// 口径（仅类型为"配对法兰及垫片螺栓螺母"时可填写）
         /// </summary>
         public string? DN { get; set; }
         
         /// <summary>
-        /// 压力（仅类型为"配对法兰及螺栓螺母"时可填写）
+        /// 压力（仅类型为"配对法兰及垫片螺栓螺母"时可填写）
         /// </summary>
         public string? PN { get; set; }
         
@@ -40,6 +38,11 @@ namespace ZKLT25.API.IServices.Dtos
         /// 有效期
         /// </summary>
         public DateTime? ExpireTime { get; set; }
+
+        /// <summary>
+        /// 有效期天数
+        /// </summary>
+        public int? EffectDay { get; set; }
         
         /// <summary>
         /// 备注

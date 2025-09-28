@@ -169,7 +169,7 @@ namespace ZKLT25.API.Models
         public double? PriceRatio { get; set; }
         
         /// <summary>
-        /// 账单详情ID
+        /// 询价单详情ID
         /// </summary>
         public int? BillDetailID { get; set; }
         

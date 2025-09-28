@@ -8,7 +8,7 @@ namespace ZKLT25.API.Models
         public int ID { get; set; }
         
         /// <summary>
-        /// 账单详情ID
+        /// 询价详情单ID
         /// </summary>
         public int? BillDetailID { get; set; }
         

@@ -33,7 +33,7 @@ namespace ZKLT25.API.Models.Interfaces
         string? Day1 { get; set; }
         string? Day2 { get; set; }
         string? Memo1 { get; set; }
-        
+        double? Price { get; set; }
         // 关联属性
         int? Supplier { get; set; }
         int? BillDetailID { get; set; }

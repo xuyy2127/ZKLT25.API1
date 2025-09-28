@@ -33,6 +33,12 @@ namespace ZKLT25.API.EntityFrameworkCore
         public DbSet<Ask_BillLog> Ask_BillLog { get; set; }
         public DbSet<Price_Bill> Price_Bill { get; set; }
         public DbSet<Ask_CGPriceValue> Ask_CGPriceValue { get; set; }
+        public DbSet<Ask_CGPrice> Ask_CGPrice { get; set; }
+
+        public DbSet<Day_FJ> Day_FJ { get; set; }
+        public DbSet<Day_FT> Day_FT { get; set; }
+
+        public DbSet<AskDay_BillDetail> AskDay_BillDetail { get; set; }
 
         [DbFunction(Name = "func_TransState", Schema = "dbo")]
         public static string func_TransState(string state)

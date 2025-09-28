@@ -13,7 +13,7 @@ namespace ZKLT25.API.IServices.Dtos
         public int? MainID { get; set; }
         
         /// <summary>
-        /// 数据类型 ："阀体" 或 "附件"
+        /// 数据类型 ：FT 或 FJ
         /// </summary>
         public string? DataType { get; set; }
     }

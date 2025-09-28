@@ -5,7 +5,7 @@ namespace ZKLT25.API.IServices.Dtos
     public class Ask_BillLogQto
     {
         /// <summary>
-        /// 账单详情ID
+        /// 询价单详情ID
         /// </summary>
         [Required]
         public int BillDetailID { get; set; }

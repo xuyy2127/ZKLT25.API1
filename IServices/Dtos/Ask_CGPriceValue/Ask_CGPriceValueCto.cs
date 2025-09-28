@@ -52,9 +52,14 @@ namespace ZKLT25.API.IServices.Dtos
         public string? ordQY { get; set; }
         
         /// <summary>
-        /// 有效期（不填默认3650天）
+        /// 有效期（不填默认3650天）。
         /// </summary>
         public DateTime? ExpireTime { get; set; }
+        
+        /// <summary>
+        /// 有效天数
+        /// </summary>
+        public int? EffectDay { get; set; }
         
         /// <summary>
         /// 备注

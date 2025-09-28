@@ -28,5 +28,10 @@ namespace ZKLT25.API.IServices.Dtos
         /// 有效性筛选：true=仅显示有效，null=显示全部
         /// </summary>
         public bool? IsValid { get; set; }
+
+        /// <summary>
+        /// 供应商名称
+        /// </summary>
+        public string? SuppName { get; set; }
     }
 }

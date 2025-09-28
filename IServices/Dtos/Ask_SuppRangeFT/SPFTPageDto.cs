@@ -6,11 +6,6 @@ namespace ZKLT25.API.IServices.Dtos
     public class SPFTPageDto
     {
         /// <summary>
-        /// 主键ID
-        /// </summary>
-        public int ID { get; set; }
-        
-        /// <summary>
         /// 阀体ID
         /// </summary>
         public int FTID { get; set; }

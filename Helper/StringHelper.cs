@@ -5,6 +5,44 @@ namespace ZKLT25.API.Helper
     public static class StringHelper
     {
         /// <summary>
+        /// 统一字符串规范化：去中/全角空格并 Trim；常用于键匹配
+        /// </summary>
+        public static string NormalizeKey(string? soure)
+        {
+            return (soure ?? string.Empty)
+                .Replace("　", string.Empty)
+                .Replace(" ", string.Empty)
+                .Trim();
+        }
+
+        /// <summary>
+        /// 安全解析 double，支持逗号/空格，返回是否成功
+        /// </summary>
+        public static bool TryParseDouble(string? soure, out double value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(soure)) return false;
+            var s = soure.Trim();
+            // 兼容千分位逗号、全角转半角
+            s = s.ToHalfWidth().Replace(",", string.Empty);
+            return double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value)
+                   || double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out value);
+        }
+
+        /// <summary>
+        /// 安全解析 decimal，支持逗号/空格，返回是否成功
+        /// </summary>
+        public static bool TryParseDecimal(string? soure, out decimal value)
+        {
+            value = 0m;
+            if (string.IsNullOrWhiteSpace(soure)) return false;
+            var s = soure.Trim();
+            s = s.ToHalfWidth().Replace(",", string.Empty);
+            return decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value)
+                   || decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out value);
+        }
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="soure"></param>

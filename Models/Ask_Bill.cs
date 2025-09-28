@@ -38,7 +38,7 @@ namespace ZKLT25.API.Models
         public int? SuppID { get; set; }
         
         /// <summary>
-        /// 账单状态
+        /// 询价单状态
         /// </summary>
         public int? BillState { get; set; }
         
@@ -68,7 +68,7 @@ namespace ZKLT25.API.Models
         public string? Reason { get; set; }
         
         /// <summary>
-        /// 账单类型
+        /// 询价单类型
         /// </summary>
         public int? BillType { get; set; } = 0;
         

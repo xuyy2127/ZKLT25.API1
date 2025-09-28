@@ -8,7 +8,7 @@ namespace ZKLT25.API.IServices.Dtos
     public class Ask_SupplierQto : BasePageParams
     {
         /// <summary>
-        /// 关键字搜索（供应商名称模糊查询）
+        /// 关键字搜索
         /// </summary>
         public string? Keyword { get; set; }
     }

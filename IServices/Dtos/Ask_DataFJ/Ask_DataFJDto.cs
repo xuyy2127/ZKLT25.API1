@@ -76,6 +76,11 @@ namespace ZKLT25.API.IServices.Dtos
         public string? Unit { get; set; }
 
         /// <summary>
+        /// 气源压力/气源
+        /// </summary>
+        public string? ordQY { get; set; }
+
+        /// <summary>
         /// 是否绑定项目（0否 1是）
         /// </summary>
         public int IsPreProBind { get; set; }

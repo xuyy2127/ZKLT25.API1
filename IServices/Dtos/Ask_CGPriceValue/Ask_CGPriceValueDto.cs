@@ -46,6 +46,8 @@ namespace ZKLT25.API.IServices.Dtos
         /// 截止日期
         /// </summary>
         public DateTime? ExpireTime { get; set; }
+
+        public int? EffectDay { get; set; }
         
         /// <summary>
         /// 备注
@@ -61,5 +63,9 @@ namespace ZKLT25.API.IServices.Dtos
         /// 是否有效
         /// </summary>
         public bool IsValid { get; set; }
+
+        public int? SuppID { get; set; }
+
+        public string SuppName { get; set; }
     }
 }

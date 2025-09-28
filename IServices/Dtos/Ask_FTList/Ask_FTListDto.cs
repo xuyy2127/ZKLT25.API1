@@ -23,7 +23,7 @@ namespace ZKLT25.API.IServices.Dtos
         /// <summary>
         /// 类型显示文本 (外购/自制)
         /// </summary>
-        public string TypeText { get; set; } = "";
+        public string isWGText { get; set; } = "";
         
         /// <summary>
         /// 是否外购 (1=是/外购, 0=否/自制)

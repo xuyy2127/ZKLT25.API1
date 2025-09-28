@@ -106,6 +106,9 @@ namespace ZKLT25.API.Models
         /// 供应商ID
         /// </summary>
         public int? SuppId { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Schema.ForeignKey("SuppId")]
+        public virtual Ask_Supplier? Supplier { get; set; }
         
         /// <summary>
         /// 价格ID

@@ -6,11 +6,6 @@ namespace ZKLT25.API.IServices.Dtos
     public class SPFJPageDto
     {
         /// <summary>
-        /// 主键ID
-        /// </summary>
-        public int ID { get; set; }
-        
-        /// <summary>
         /// 附件类型
         /// </summary>
         public string FJType { get; set; } = "";

@@ -10,7 +10,7 @@ namespace ZKLT25.API.Services
         {
             // Ask_FTList 映射配置
             CreateMap<Ask_FTList, Ask_FTListDto>()
-                .ForMember(dest => dest.TypeText, opt => opt.MapFrom(src => GetTypeText(src.isWG)))
+                .ForMember(dest => dest.isWGText, opt => opt.MapFrom(src => GetisWGText(src.isWG)))
                 .ForMember(dest => dest.IsAskText, opt => opt.MapFrom(src => GetIsAskText(src.isAsk)));
             
             CreateMap<Ask_FTListCto, Ask_FTList>();
@@ -56,6 +56,8 @@ namespace ZKLT25.API.Services
 
             // Ask_CGPriceValue 映射配置
             CreateMap<Ask_CGPriceValue, Ask_CGPriceValueDto>()
+                .ForMember(dest => dest.SuppID, opt => opt.MapFrom(src => src.SuppId))
+                .ForMember(dest => dest.SuppName, opt => opt.MapFrom(src => src.Supplier != null ? src.Supplier.SuppName : null))
                 .ForMember(dest => dest.IsValid, opt => opt.MapFrom(src => src.ExpireTime == null || src.ExpireTime > DateTime.Now));
             CreateMap<Ask_CGPriceValueCto, Ask_CGPriceValue>();
             CreateMap<Ask_CGPriceValueUto, Ask_CGPriceValue>();
@@ -72,6 +74,30 @@ namespace ZKLT25.API.Services
                 .ForMember(dest => dest.BillDetailID, opt => opt.MapFrom(src => src.ID))
                 .ForMember(dest => dest.FJType, opt => opt.MapFrom(src => src.Type))
                 .ForMember(dest => dest.FJVersion, opt => opt.MapFrom(src => src.Version));
+
+            // 阀体询价待办：明细 -> FTTodoDto（除 ProjName 其余由明细表映射）
+            CreateMap<Ask_BillDetail, FTTodoDto>()
+                .ForMember(d => d.BillID,    o => o.MapFrom(s => s.BillID ?? 0))
+                .ForMember(d => d.Name,      o => o.MapFrom(s => s.Name))
+                .ForMember(d => d.Version,   o => o.MapFrom(s => s.Version))
+                .ForMember(d => d.DN,        o => o.MapFrom(s => s.DN))
+                .ForMember(d => d.PN,        o => o.MapFrom(s => s.PN))
+                .ForMember(d => d.FT,        o => o.MapFrom(s => s.FT))
+                .ForMember(d => d.FNJ,       o => o.MapFrom(s => s.FNJ))
+                .ForMember(d => d.LJ,        o => o.MapFrom(s => s.LJ))
+                .ForMember(d => d.FG,        o => o.MapFrom(s => s.FG))
+                .ForMember(d => d.ordMed,    o => o.MapFrom(s => s.ordMed))
+                .ForMember(d => d.OrdKV,     o => o.MapFrom(s => s.OrdKV))
+                .ForMember(d => d.ordFW,     o => o.MapFrom(s => s.ordFW))
+                .ForMember(d => d.ordLeak,   o => o.MapFrom(s => s.ordLeak))
+                .ForMember(d => d.ordQY,     o => o.MapFrom(s => s.ordQY))
+                .ForMember(d => d.TL,        o => o.MapFrom(s => s.TL))
+                .ForMember(d => d.CGPriceMemo, o => o.MapFrom(s => s.CGPriceMemo))
+                .ForMember(d => d.CGMemo,    o => o.MapFrom(s => s.CGMemo))
+                .ForMember(d => d.Memo,      o => o.MapFrom(s => s.Memo))
+                .ForMember(d => d.Timeout,   o => o.MapFrom(s => s.Timeout))
+                .ForMember(d => d.Num,       o => o.MapFrom(s => s.Num ?? 0))
+                .ForMember(d => d.ProjName,  o => o.Ignore());
 
             
         }
@@ -157,7 +183,7 @@ namespace ZKLT25.API.Services
         /// <summary>
         /// 获取类型显示文本
         /// </summary>
-        private static string GetTypeText(int? isWG)
+        private static string GetisWGText(int? isWG)
         {
             return isWG switch
             {

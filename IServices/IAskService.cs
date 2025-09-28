@@ -37,14 +37,6 @@ namespace ZKLT25.API.IServices
         Task<ResultModel<bool>> DeleteFTAsync(int id);
 
         /// <summary>
-        /// 检查阀体型号是否存在
-        /// </summary>
-        /// <param name="ftVersion">阀体型号</param>
-        /// <param name="excludeId">排除的ID(用于编辑时检查)</param>
-        /// <returns></returns>
-        Task<ResultModel<bool>> ExistsFTAsync(string ftVersion, int? excludeId = null);
-
-        /// <summary>
         /// 批量更新系数
         /// </summary>
         /// <param name="ids">要更新的记录ID列表</param>
@@ -114,14 +106,6 @@ namespace ZKLT25.API.IServices
         Task<ResultModel<bool>> DeleteSPAsync(int id);
 
         /// <summary>
-        /// 检查供应商是否存在
-        /// </summary>
-        /// <param name="SuppName">供应商名称</param>
-        /// <param name="excludeId">排除的ID(用于编辑时检查)</param>
-        /// <returns></returns>
-        Task<ResultModel<bool>> ExistsSPAsync(string SuppName, int? excludeId = null);
-
-        /// <summary>
         /// 获取供应商附件配置页面数据
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
@@ -165,16 +149,42 @@ namespace ZKLT25.API.IServices
         Task<ResultModel<PaginationList<Ask_BillDto>>> GetBillPagedListAsync(Ask_BillQto qto);
 
         /// <summary>
-        ///查看询价单据详情
-        /// </summary>
-        /// <param name="qto">查询条件</param>
-        /// <returns></returns>
-        Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(int billId);
-
-        /// <summary>
         /// 获取询价状态日志
         /// </summary>
         Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync(Ask_BillLogQto qto);
+        #endregion
+
+        #region 阀体询价待办
+        /// <summary>
+        /// 阀体询价待办（按单据过滤，返回明细）分页
+        /// </summary>
+        Task<ResultModel<PaginationList<FTTodoDto>>> GetFTTodoPagedListAsync(Ask_FTTodoQto qto);
+        #endregion
+
+        #region 交期
+        /// <summary>
+        /// 分页查询 AskDay_Bill
+        /// </summary>
+        Task<ResultModel<PaginationList<AskDay_BillDto>>> GetAskDayBillPagedListAsync(AskDay_BillQto qto);
+
+        /// <summary>
+        /// 历史项目分页（按当前 BillID 的 ProjName 模糊匹配，筛选 BillState=2）
+        /// </summary>
+        Task<ResultModel<PaginationList<AskDay_BillDto>>> GetAskDayBillHistoryPagedListAsync(AskDay_BillHistoryQto qto);
+
+        /// <summary>
+        /// 交期明细分页（按 billId 展示，按 Type 分组显示辅助字段）
+        /// </summary>
+        Task<ResultModel<PaginationList<AskDay_BillDetailDto>>> GetAskDayBillDetailPagedListAsync(AskDay_BillDetailQto qto);
+        /// <summary>
+        /// 获取物料对比信息（当前与历史）
+        /// </summary>
+        Task<ResultModel<List<MaterialComparisonDto>>> GetBillDetailsComparisonAsync(int currentId, int historyId);
+        
+        /// <summary>
+        /// 暂存/提交采购回复（AskDay_Bill）
+        /// </summary>
+        Task<ResultModel<bool>> SaveAskDayBillAsync(int billId, AskDay_BillDetailCto cto, string action);
         #endregion
 
         #region 阀体附件价格查询
@@ -253,16 +263,16 @@ namespace ZKLT25.API.IServices
         /// </summary>
         /// <param name="detailId">询价明细ID（优先，如果提供则按明细自动分流到阀体或附件查询）</param>
         /// <param name="type">当未提供 detailId 时，按该类型作为 FJType 查询附件供应商</param>
-        /// <param name="suppNameKeyword">供应商名称关键字（可选，用于模糊搜索）</param>
+        /// <param name="suppNameKeyword">供应商名称关键字</param>
         /// <returns>供应商列表（用于前端展示 SuppName，提交使用 ID）</returns>
         Task<ResultModel<List<Ask_SupplierDto>>> GetSupplierOptionsAsync(int? detailId, string? fjType, string? suppNameKeyword = null);
-         
+
         /// <summary>
         /// 创建采购成本记录
         /// </summary>
         /// <param name="cto">创建请求</param>
         /// <returns></returns>
-        Task<ResultModel<bool>> CreateCGAsync(Ask_CGPriceValueCto cto);
+        Task<ResultModel<string>> CreateCGAsync(Ask_CGPriceValueCto cto);
 
         /// <summary>
         /// 删除采购成本记录

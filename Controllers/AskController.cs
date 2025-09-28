@@ -73,18 +73,6 @@ namespace ZKLT25.API.Controllers
         }
 
         /// <summary>
-        /// 检查阀体型号是否存在
-        /// </summary>
-        /// <param name="ftVersion">阀体型号</param>
-        /// <param name="excludeId">排除的ID（编辑时用）</param>
-        /// <returns></returns>
-        [HttpGet("CheckFTExists")]
-        public async Task<ResultModel<bool>> CheckFTExistsAsync([FromQuery] string ftVersion, [FromQuery] int? excludeId = null)
-        {
-            return await _service.ExistsFTAsync(ftVersion, excludeId);
-        }
-
-        /// <summary>
         /// 批量更新阀体系数
         /// </summary>
         [HttpPost("BatchUpdateFTRatio")]
@@ -163,7 +151,7 @@ namespace ZKLT25.API.Controllers
         }
 
         /// <summary>
-        /// 获取可选供应商列表：优先按 detailId 路由阀体/附件；否则按 fjType 作为附件类型查询
+        /// 获取可选供应商列表
         /// </summary>
         /// <param name="detailId">询价明细ID（优先）</param>
         /// <param name="fjType">当未提供 detailId 时，按该附件类型（FJType）查询</param>
@@ -180,8 +168,6 @@ namespace ZKLT25.API.Controllers
         /// <param name="cto">创建参数</param>
         /// <returns></returns>
         [HttpPost("CreateSP")]
-        [Consumes("application/json")]
-        [Produces("application/json")]
         public async Task<ResultModel<bool>> CreateSPAsync([FromBody] Ask_SupplierCto cto)
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
@@ -213,18 +199,6 @@ namespace ZKLT25.API.Controllers
         }
 
         /// <summary>
-        /// 检查供应商信息是否存在
-        /// </summary>
-        /// <param name="SuppName">供应商名称</param>
-        /// <param name="excludeId">排除的ID（编辑时用）</param>
-        /// <returns></returns>
-        [HttpGet("CheckSPExists")]
-        public async Task<ResultModel<bool>> CheckSPExistsAsync([FromQuery] string SuppName, [FromQuery] int? excludeId = null)
-        {
-            return await _service.ExistsSPAsync(SuppName, excludeId);
-        }
-
-        /// <summary>
         /// 获取供应商附件配置页面
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
@@ -240,17 +214,16 @@ namespace ZKLT25.API.Controllers
         /// 保存供应商附件配置
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
-        /// <param name="suppliedFJTypes">选中供应的附件类型列表</param>
+        /// <param name="suppliedFJTypes">附件类型数组</param>
         /// <returns></returns>
-        [HttpPost("UpdateSPFJ")]
+        [HttpPost("{supplierId}/UpdateSPFJ")]
         [Consumes("application/json")]
         [Produces("application/json")]
         public async Task<IActionResult> SaveSPFJ(int supplierId, [FromBody] List<string> suppliedFJTypes)
         {
-            var result = await _service.BatchUpdateSPFJAsync(supplierId, suppliedFJTypes);
+            var result = await _service.BatchUpdateSPFJAsync(supplierId, suppliedFJTypes ?? new List<string>());
             return Ok(result);
         }
-
         /// <summary>
         /// 获取供应商阀体配置页面
         /// </summary>
@@ -267,18 +240,17 @@ namespace ZKLT25.API.Controllers
         /// 保存供应商阀体配置
         /// </summary>
         /// <param name="supplierId">供应商ID</param>
-        /// <param name="cto">配置请求</param>
+        /// <param name="items">阀体项目数组</param>
         /// <returns></returns>
-        [HttpPost("UpdateSPFT")]
+        [HttpPost("{supplierId}/UpdateSPFT")] 
         [Consumes("application/json")]
         [Produces("application/json")]
-        public async Task<IActionResult> SaveSPFT(int supplierId, [FromBody] BatchUpdateSPFTCto cto)
+        public async Task<IActionResult> SaveSPFT(int supplierId, [FromBody] List<SPFTItem> items)
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            var result = await _service.BatchUpdateSPFTAsync(supplierId, cto.SuppliedFTItems, currentUser);
+            var result = await _service.BatchUpdateSPFTAsync(supplierId, items ?? new List<SPFTItem>(), currentUser);
             return Ok(result);
         }
-
 
         #endregion
 
@@ -299,14 +271,44 @@ namespace ZKLT25.API.Controllers
         }
 
         /// <summary>
-        /// 获取询价详情
+        /// 采购/生产交期回复查询分页
         /// </summary>
-        /// <param name="billId">账单ID</param>
+        /// <param name="qto">查询参数</param>
         /// <returns></returns>
-        [HttpGet("GetBillDetails/{billId}")]
-        public async Task<ResultModel<List<Ask_BillDetailDto>>> GetBillDetailsAsync(int billId)
+        [HttpGet("GetAskDayBillPagedList")]
+        public async Task<ResultModel<PaginationList<AskDay_BillDto>>> GetAskDayBillPagedListAsync([FromQuery] AskDay_BillQto qto)
         {
-            return await _service.GetBillDetailsAsync(billId);
+            var res = await _service.GetAskDayBillPagedListAsync(qto);
+            if (res.Data != null)
+                Response.Headers.Append("TotalCount", res.Data.TotalCount.ToString());
+            return res;
+        }
+
+        /// <summary>
+        /// 历史交期项目分页
+        /// </summary>
+        [HttpGet("GetAskDayBillHistoryPagedList")]
+        public async Task<ResultModel<PaginationList<AskDay_BillDto>>> GetAskDayBillHistoryPagedListAsync([FromQuery] AskDay_BillHistoryQto qto)
+        {
+            var res = await _service.GetAskDayBillHistoryPagedListAsync(qto);
+            if (res.Data != null)
+                Response.Headers.Append("TotalCount", res.Data.TotalCount.ToString());
+            return res;
+        }
+
+        /// <summary>
+        /// 保存/提交采购或生产交期回复
+        /// </summary>
+        [HttpPost("AskDayBill/{billId}/Save")]
+        public async Task<ResultModel<bool>> SaveAskDayBillAsync(
+            [FromRoute] int billId,
+            [FromBody] AskDay_BillDetailCto cto,
+            [FromQuery] string action)
+        {
+            if (string.IsNullOrEmpty(action))
+                return ResultModel<bool>.Error("缺少操作类型 action");
+
+            return await _service.SaveAskDayBillAsync(billId, cto, action);
         }
 
         /// <summary>
@@ -318,6 +320,20 @@ namespace ZKLT25.API.Controllers
         public async Task<ResultModel<List<Ask_BillLogDto>>> GetBillLogsAsync([FromBody] Ask_BillLogQto qto)
         {
             return await _service.GetBillLogsAsync(qto);
+        }
+        #endregion
+
+        #region 阀体询价待办
+        /// <summary>
+        /// 阀体询价待办
+        /// </summary>
+        [HttpGet("GetFTTodoPagedList")]
+        public async Task<ResultModel<PaginationList<FTTodoDto>>> GetFTTodoPagedListAsync([FromQuery] Ask_FTTodoQto qto)
+        {
+            var res = await _service.GetFTTodoPagedListAsync(qto);
+            if (res.Data != null)
+                Response.Headers.Append("TotalCount", res.Data.TotalCount.ToString());
+            return res;
         }
         #endregion
 
@@ -351,7 +367,7 @@ namespace ZKLT25.API.Controllers
         }
 
         /// <summary>
-        /// 设置价格状态
+        /// 设置阀体/附件价格状态
         /// </summary>
         /// <param name="request">请求参数</param>
         /// <returns></returns>
@@ -360,6 +376,17 @@ namespace ZKLT25.API.Controllers
         {
             var currentUser = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
             return await _service.SetPriceStatusAsync(request.Ids, request.Action, request.ExtendDays, currentUser, request.EntityType);
+        }
+        #endregion
+
+        #region 交期物料对比
+        /// <summary>
+        /// 获取物料对比信息（当前与历史）
+        /// </summary>
+        [HttpGet("AskDayBill/{currentId}/Compare/{historyId}")]
+        public async Task<ResultModel<List<MaterialComparisonDto>>> GetBillDetailsComparisonAsync([FromRoute] int currentId, [FromRoute] int historyId)
+        {
+            return await _service.GetBillDetailsComparisonAsync(currentId, historyId);
         }
         #endregion
 
@@ -376,7 +403,7 @@ namespace ZKLT25.API.Controllers
             {
                 var excelBytes = await _service.DataFJExcelAsync(qto);
                 var fileName = $"附件询价数据_{DateTime.Now:yyyyMMddHHmm}.xlsx";
-                
+                Response.Headers["isfile"] = "true";
                 return File(excelBytes, 
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
                     fileName);
@@ -399,6 +426,7 @@ namespace ZKLT25.API.Controllers
             {
                 var excelBytes = await _service.DataFTExcelAsync(qto);
                 var fileName = $"阀体询价数据_{DateTime.Now:yyyyMMddHHmm}.xlsx";
+                Response.Headers["isfile"] = "true";
                 return File(excelBytes,
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     fileName);
@@ -433,7 +461,7 @@ namespace ZKLT25.API.Controllers
 
 
         /// <summary>
-        /// 关闭项目
+        /// 关闭询价项目
         /// </summary>
         [HttpPost("CloseProject")]
         [Consumes("application/json")]
@@ -468,7 +496,7 @@ namespace ZKLT25.API.Controllers
         /// <param name="cto">创建参数</param>
         /// <returns></returns>
         [HttpPost("CreateCG")]
-        public async Task<ResultModel<bool>> CreateCGAsync([FromBody] Ask_CGPriceValueCto cto)
+        public async Task<ResultModel<string>> CreateCGAsync([FromBody] Ask_CGPriceValueCto cto)
         {
             return await _service.CreateCGAsync(cto);
         }
@@ -508,7 +536,7 @@ namespace ZKLT25.API.Controllers
             {
                 var excelBytes = await _service.ExportCGExcelAsync(qto);
                 var fileName = $"采购成本库数据_{DateTime.Now:yyyyMMddHHmm}.xlsx";
-                
+                Response.Headers["isfile"] = "true";
                 return File(excelBytes, 
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
                     fileName);
@@ -526,6 +554,7 @@ namespace ZKLT25.API.Controllers
         /// <param name="isReplace">是否全量替换</param>
         /// <returns></returns>
         [HttpPost("ImportCGExcel")]
+        [Consumes("multipart/form-data")]
         public async Task<ResultModel<ImportResult>> ImportCGExcelAsync(IFormFile file, [FromQuery] bool isReplace = false)
         {
             return await _service.ImportCGExcelAsync(file, isReplace);

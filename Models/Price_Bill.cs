@@ -133,7 +133,7 @@ namespace ZKLT25.API.Models
         public string? JsonData2 { get; set; }
         
         /// <summary>
-        /// 账单类型
+        /// 询价单类型
         /// </summary>
         public int? BillType { get; set; } = 0;
         

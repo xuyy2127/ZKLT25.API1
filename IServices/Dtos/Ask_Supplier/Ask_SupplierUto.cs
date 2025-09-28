@@ -8,15 +8,14 @@ namespace ZKLT25.API.IServices.Dtos
     public class Ask_SupplierUto
     {
         /// <summary>
-        /// 供应商名称
+        /// 供应商名称（可选，若不修改名称可不传）
         /// </summary>
-        [Required(ErrorMessage = "供应商名称不能为空")]
         [StringLength(200, ErrorMessage = "供应商名称长度不能超过200个字符")]
-        public string SuppName { get; set; } = "";
+        public string? SuppName { get; set; }
 
         /// <summary>
-        /// 供应商类型 (0=不合格、1=合格、2=临时、3=初选)
+        /// 供应商类型 (0=不合格、1=合格、2=临时、3=初选)，未传则不变
         /// </summary>
-        public int SupplierClass { get; set; } = 0;
+        public int? SupplierClass { get; set; }
     }
 }

@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace ZKLT25.API.Models
 {
     /// <summary>
-    /// 询价账单文件表
+    /// 询价单文件表
     /// </summary>
     [Table("Ask_BillFile")]
     public class Ask_BillFile
@@ -13,7 +13,7 @@ namespace ZKLT25.API.Models
         public int ID { get; set; }
         
         /// <summary>
-        /// 账单详情ID
+        /// 询价详情单ID
         /// </summary>
         public int BillDetailID { get; set; }
         

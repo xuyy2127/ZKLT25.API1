@@ -67,14 +67,8 @@ namespace ZKLT25.API.Models
         /// </summary>
         public int? DayFJ { get; set; }
         
-        /// <summary>
-        /// 加急天数
-        /// </summary>
         public int? DayJJ { get; set; }
-        
-        /// <summary>
-        /// 总排天数
-        /// </summary>
+
         public int? DayZP { get; set; }
         
         /// <summary>
@@ -139,7 +133,7 @@ namespace ZKLT25.API.Models
         public string? BeforeMemo { get; set; }
         
         /// <summary>
-        /// 备注
+        /// 生产备注
         /// </summary>
         [StringLength(50)]
         public string? Memo { get; set; }
